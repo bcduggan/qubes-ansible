@@ -241,14 +241,14 @@ class QubesVirt(object):
     def get_states(self):
         state = []
         for vm in self.app.domains:
-            state.append("%s %s" % (vm.name, self.__get_state(vm.name)))
+            state.append(f"{vm.name} {self.__get_state(vm.name)}")
         return state
 
     def list_vms(self, state):
         res = []
         for vm in self.app.domains:
             if vm.name != "dom0" and state == self.__get_state(vm.name):
-                res.append("%s" % vm.name)
+                res.append(vm.name)
         return res
 
     def all_vms(self):
@@ -585,7 +585,7 @@ def core(module):
     if command:
         if command in VM_COMMANDS:
             if not guest:
-                module.fail_json(msg="%s requires 1 argument: guest" % command)
+                module.fail_json(msg=f"{command} requires 1 argument: guest")
             if command == "create":
                 try:
                     v.get_vm(guest)
@@ -620,7 +620,7 @@ def core(module):
             return VIRT_SUCCESS, res
 
         else:
-            module.fail_json(msg="Command %s not recognized" % command)
+            module.fail_json(msg=f"Command {command} not recognized")
 
     if state:
         if not guest:
