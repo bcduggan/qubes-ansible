@@ -1,63 +1,51 @@
-## Ansible connection and module for QubesOS
+# Ansible Connection and Module for QubesOS
 
-This is a written from scratch project to have a default Ansible connection
-plugin to interact with [Qubes OS](https://qubes-os.org). There is also an
-Ansible module to create/destroy/maintain state of the VM(s). 
+This project provides an Ansible connection plugin to interact with [Qubes OS](https://qubes-os.org) virtual machines called `qubes` and an Ansible module to manage the state of your qubes.
 
 ## Documentation
 
-Read it [online](https://qubes-ansible.readthedocs.io/en/latest/), it has
-better commands and setup instructions than the README file.
+For comprehensive usage instructions, advanced commands, and setup details, please refer to the full documentation available [online](https://qubes-ansible.readthedocs.io/en/latest/).
 
+## Setup
 
-## How to setup?
+### Module installation
 
-Put the ``ansible_module`` directory in a known place; in our example,
-we will put it in ``/usr/share/ansible_module``.
+1. Copy the `ansible_module` directory to a known location on your system. For example, you can place it in:
+   ```
+   /usr/share/ansible_module
+   ```
 
-Remember that this project will only from **dom0** or any VM with AdminAPI
-access.
+2. This project is designed to run from **dom0** or from any qube with required RPC policies.
 
+> FIXME: Provide RPC policies.
 
+### Ansible installation and Module/Connection configuration
 
-## Installing Ansible and setup of the our module/connection
+1. Install Ansible:
+   ```bash
+   sudo qubes-dom0-update ansible
+   ```
 
-Install Ansible whichever way you like. In **Qubes 4.2 dom0** it would be,
+2. Modify your `/etc/ansible/ansible.cfg` file to include the following lines:
+   ```ini
+   [defaults]
+   library = /usr/share/ansible_module/
+   connection_plugins = /usr/share/ansible_module/conns/
+   ```
 
-```
-sudo qubes-dom0-update ansible
-```
+## Writing playbooks and roles
 
-
-
-Update your ``/etc/ansible/ansible.cfg`` to have the following two lines.
-
-```
-[defaults]
-library = /usr/share/ansible_module/
-connection_plugins = /usr/share/ansible_module/conns/ 
-```
-
-### How to write playbooks/roles tasks etc?
-
-
-Just keep in mind that creating/destroying vms will require a **local** 
-connection and will use the *qubesos* module.
-
-To work on a remote VM, use **qubes** connection and use standard playbooks.
-
+- When creating or destroying qubes, use a **local** connection with the `qubesos` module.
+- For tasks executed on qubes, use the **qubes** connection along with standard Ansible playbooks.
 
 ## Examples
 
-Check the [examples](examples/) directory in this repo.
+See the [examples](examples/) directory for sample playbooks and role tasks demonstrating common usage scenarios.
 
-## Under development
+## Development status
 
-This project is still very young, and, the **qubesos** module is under
-heavy development so the syntax/keywords may change in future.
+This project is still in its early stages. The `qubesos` module is under active development, so the syntax and keywords may change in future releases.
 
-### License GPLv3+
+## License
 
-Please see the [LICENSE](LICENSE) file for a complete copy of License.
-
-
+This project is licensed under the GPLv3+ license. Please see the [LICENSE](LICENSE) file for the full license text.

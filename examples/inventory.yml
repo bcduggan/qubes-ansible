@@ -1,0 +1,27 @@
+local:
+  hosts:
+    localhost
+  vars:
+    ansible_connection: local
+
+appvms:
+  hosts:
+    testvm
+    xchat
+  vars:
+    ansible_connection: qubes
+
+debian_templates:
+  hosts:
+    debian-12-xfce
+    whonix-gateway-17
+    whonix-workstation-17
+  vars:
+    ansible_connection: qubes
+
+fedora_templates:
+  hosts:
+    fedora-41-xfce
+    fedora-41-minimal
+  vars:
+    ansible_connection: qubes
