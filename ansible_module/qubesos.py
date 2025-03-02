@@ -31,91 +31,93 @@ ANSIBLE_METADATA = {
 DOCUMENTATION = """
 ---
 module: qubesos
-short_description: Manages virtual machines supported by QubesOS
+short_description: Manage Qubes OS virtual machines
 description:
-     - Manages virtual machines supported by I(libvirt).
+    - This module manages Qubes OS virtual machines using the qubesadmin API.
+    - It supports VM creation, state management, and various operations such as starting, pausing, shutting down, and more.
+    - For definitions of Qubes OS terminology (e.g. AppVM, TemplateVM, StandaloneVM, DispVM), please refer to the Qubes OS Glossary at https://www.qubes-os.org/doc/glossary/.
 version_added: "2.8"
 options:
   name:
     description:
-      - name of the guest VM being managed. Note that VM must be previously
-        defined with xml.
-      - This option is required unless I(command) is C(list_vms).
+      - Name of the Qubes OS virtual machine to manage.
+      - This parameter is required for operations targeting a specific VM. It can also be specified as C(guest).
   state:
     description:
-      - Note that there may be some lag for state requests like C(shutdown)
-        since these refer only to VM states. After starting a guest, it may not
-        be immediately accessible.
-    choices: [ destroyed, paused, running, shutdown ]
+      - Desired state of the VM.
+      - When set to C(present), ensures the VM is defined.
+      - When set to C(running), ensures the VM is started.
+      - When set to C(shutdown), ensures the VM is stopped.
+      - When set to C(destroyed), forces the VM to shut down.
+      - When set to C(pause), pauses a running VM.
+      - When set to C(undefine), removes the VM definition.
+    choices: [ present, running, shutdown, destroyed, pause, undefine ]
   command:
     description:
-      - In addition to state management, various non-idempotent commands are available.
-    choices: [ create, define, destroy,  info, list_vms, pause, shutdown, start, status, stop, unpause ]
-  autostart:
+      - Non-idempotent command to execute on the VM.
+      - Available commands include:
+        - C(create): Create a new VM.
+        - C(destroy): Force shutdown of a VM.
+        - C(pause): Pause a running VM.
+        - C(shutdown): Gracefully shut down a VM.
+        - C(status): Retrieve the current state of a VM.
+        - C(start): Start a VM.
+        - C(stop): Stop a VM.
+        - C(unpause): Resume a paused VM.
+        - C(removetags): Remove specified tags from a VM.
+        - C(info): Retrieve information about all VMs.
+        - C(list_vms): List VMs filtered by state.
+        - C(get_states): Get the states of all VMs.
+        - C(createinventory): Generate an inventory file for Qubes OS VMs.
+  label:
     description:
-      - start VM at host startup.
-    type: bool
-    version_added: "2.3"
-  uri:
+      - Label (or color) assigned to the VM. For more details, see the Qubes OS Glossary.
+    default: "red"
+  vmtype:
     description:
-      - libvirt connection uri.
-    default: qemu:///system
-  xml:
+      - The type of VM to manage.
+      - Typical values include C(AppVM), C(StandaloneVM), and C(TemplateVM).
+      - Refer to the Qubes OS Glossary for definitions of these terms.
+    default: "AppVM"
+  template:
     description:
-      - XML document used with the define command.
-      - Must be raw XML content using C(lookup). XML cannot be reference to a file.
+      - Name of the template VM to use when creating or cloning a VM.
+      - For AppVMs, this is the base TemplateVM from which the VM is derived.
+    default: "default"
+  properties:
+    description:
+      - A dictionary of VM properties to set.
+      - Valid keys include:
+          - autostart (bool)
+          - debug (bool)
+          - include_in_backups (bool)
+          - kernel (str)
+          - label (str)
+          - maxmem (int)
+          - memory (int)
+          - provides_network (bool)
+          - netvm (str)
+          - default_dispvm (str)
+          - template (str)
+          - template_for_dispvms (bool)
+          - vcpus (int)
+          - virt_mode (str)
+          - features (dict)
+          - volume (dict; must include both 'name' and 'size')
+    default: {}
+  tags:
+    description:
+      - A list of tags to apply to the VM.
+      - Tags are used within Qubes OS for VM categorization.
+    type: list
+    default: []
 requirements:
-    - python >= 2.6
-    - libvirt-python
+  - python >= 3.12
+  - qubesadmin
+  - jinja2
 author:
-    - Ansible Core Team
-    - Michael DeHaan
-    - Seth Vidal
-"""
-
-EXAMPLES = """
-# a playbook task line:
-- virt:
-    name: alpha
-    state: running
-
-# /usr/bin/ansible invocations
-# ansible host -m virt -a "name=alpha command=status"
-# ansible host -m virt -a "name=alpha command=get_xml"
-# ansible host -m virt -a "name=alpha command=create uri=lxc:///"
-
----
-# a playbook example of defining and launching an LXC guest
-tasks:
-  - name: define vm
-    virt:
-        name: foo
-        command: define
-        xml: "{{ lookup('template', 'container-template.xml.j2') }}"
-        uri: 'lxc:///'
-  - name: start vm
-    virt:
-        name: foo
-        state: running
-        uri: 'lxc:///'
-"""
-
-RETURN = """
-# for list_vms command
-list_vms:
-    description: The list of vms defined on the remote system
-    type: dictionary
-    returned: success
-    sample: [
-        "build.example.org",
-        "dev.example.org"
-    ]
-# for status command
-status:
-    description: The status of the VM, among running, crashed, paused and shutdown
-    type: string
-    sample: "success"
-    returned: success
+  - Kushal Das
+  - Frédéric Pierret
 """
 
 import time
