@@ -300,7 +300,6 @@ class QubesVirt(object):
         netvm="default",
     ):
         """Start the machine via the given vmid"""
-        network_vm = None
         template_vm = ""
         if template:
             template_vm = template
@@ -337,7 +336,6 @@ class QubesVirt(object):
     def properties(self, vmname, prefs, vmtype, label, vmtemplate):
         "Sets the given properties to the VM"
         changed = False
-        vm = None
         values_changed = []
         try:
             vm = self.get_vm(vmname)
@@ -493,6 +491,7 @@ def core(module):
     template = module.params.get("template", None)
     properties = module.params.get("properties", {})
     tags = module.params.get("tags", [])
+    netvm = None
 
     v = QubesVirt(module)
     res = dict()
@@ -504,8 +503,9 @@ def core(module):
                 return VIRT_FAILED, {"Invalid property": key}
             if type(val) != PROPS[key]:
                 return VIRT_FAILED, {"Invalid property value type": key}
+
             # Make sure that the netvm exists
-            if key == "netvm" and val != "":
+            if key == "netvm" and val not in ["", "none", "None"]:
                 try:
                     vm = v.get_vm(val)
                 except KeyError:
@@ -513,6 +513,7 @@ def core(module):
                 # Also the vm should provide network
                 if not vm.provides_network:
                     return VIRT_FAILED, {"Missing netvm capability": val}
+                netvm = vm
 
             # Make sure volume has both name and value
             if key == "volume":
@@ -539,6 +540,7 @@ def core(module):
                 # Also the vm should provide network
                 if not vm.template_for_dispvms:
                     return VIRT_FAILED, {"Missing dispvm capability": val}
+
         if state == "present" and guest and vmtype:
             changed, changed_values = v.properties(
                 guest, properties, vmtype, label, template
@@ -585,8 +587,6 @@ def core(module):
             if not guest:
                 module.fail_json(msg="%s requires 1 argument: guest" % command)
             if command == "create":
-                # if not xml:
-                #     module.fail_json(msg="define requires xml argument")
                 try:
                     v.get_vm(guest)
                 except KeyError:
