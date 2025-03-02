@@ -20,14 +20,13 @@
 # -- Project information -----------------------------------------------------
 
 project = "Qubes Ansible"
-copyright = "2018, Kushal Das"
-author = "Kushal Das"
+copyright = ["2018, Kushal Das", "2025, Qubes OS Team"]
+author = "Qubes OS Team"
 
 # The short X.Y version
 version = ""
 # The full version, including alpha/beta/rc tags
 release = "0.1"
-
 
 # -- General configuration ---------------------------------------------------
 
@@ -128,7 +127,7 @@ latex_documents = [
         master_doc,
         "QubesAnsible.tex",
         "Qubes Ansible Documentation",
-        "Kushal Das",
+        "Qubes OS Team",
         "manual",
     ),
 ]
