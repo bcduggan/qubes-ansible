@@ -26,15 +26,11 @@ __metaclass__ = type
 
 DOCUMENTATION = """
     connection: qubes
-    short_description: Interact with an existing QubesOS AppVM
-
+    short_description: Interact with an existing qube.
     description:
-        - Run commands or put/fetch files to an existing Qubes AppVM using qubes tools.
-
-    author: Kushal Das (@kushaldas)
-
+        - Run commands or put/fetch files to an existing qube using Qubes OS tools.
+    author: Qubes OS Team <qubes-devel@googlegroups.com>
     version_added: "2.8"
-
     options:
       remote_addr:
         description:
@@ -45,12 +41,10 @@ DOCUMENTATION = """
             - name: ansible_host
       remote_user:
         description:
-            - The user to execute as inside the vm.
+            - The user to execute as inside the qube.
         default: user
         vars:
             - name: ansible_user
-#        keyword:
-#            - name: hosts
 """
 
 import subprocess
