@@ -19,13 +19,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type
 
-ANSIBLE_METADATA = {'metadata_version': '1.1',
-                    'status': ['preview'],
-                    'supported_by': 'community'}
+ANSIBLE_METADATA = {
+    "metadata_version": "1.1",
+    "status": ["preview"],
+    "supported_by": "community",
+}
 
-DOCUMENTATION = '''
+DOCUMENTATION = """
 ---
 module: qubesos
 short_description: Manages virtual machines supported by QubesOS
@@ -68,9 +71,9 @@ author:
     - Ansible Core Team
     - Michael DeHaan
     - Seth Vidal
-'''
+"""
 
-EXAMPLES = '''
+EXAMPLES = """
 # a playbook task line:
 - virt:
     name: alpha
@@ -95,9 +98,9 @@ tasks:
         name: foo
         state: running
         uri: 'lxc:///'
-'''
+"""
 
-RETURN = '''
+RETURN = """
 # for list_vms command
 list_vms:
     description: The list of vms defined on the remote system
@@ -113,7 +116,7 @@ status:
     type: string
     sample: "success"
     returned: success
-'''
+"""
 
 import time
 import traceback
@@ -136,36 +139,47 @@ VIRT_SUCCESS = 0
 VIRT_UNAVAILABLE = 2
 
 ALL_COMMANDS = []
-VM_COMMANDS = ['create', 'destroy', 'pause', 'shutdown', 'status', 'start', 'stop', 'unpause', 'removetags']
-HOST_COMMANDS = ['info', 'list_vms', 'get_states', 'createinventory']
+VM_COMMANDS = [
+    "create",
+    "destroy",
+    "pause",
+    "shutdown",
+    "status",
+    "start",
+    "stop",
+    "unpause",
+    "removetags",
+]
+HOST_COMMANDS = ["info", "list_vms", "get_states", "createinventory"]
 ALL_COMMANDS.extend(VM_COMMANDS)
 ALL_COMMANDS.extend(HOST_COMMANDS)
 
 VIRT_STATE_NAME_MAP = {
-    0: 'running',
-    1: 'paused',
-    4: 'shutdown',
-    5: 'shutdown',
-    6: 'crashed',
+    0: "running",
+    1: "paused",
+    4: "shutdown",
+    5: "shutdown",
+    6: "crashed",
 }
 
-PROPS = {'autostart': bool,
-         'debug': bool,
-         'include_in_backups': bool,
-         'kernel': str,
-         'label': str,
-         'maxmem': int,
-         'memory': int,
-         'provides_network': bool,
-         'template': str,
-         'template_for_dispvms': bool,
-         'vcpus': int,
-         'virt_mode': str,
-         'default_dispvm': str,
-         'netvm': str,
-         'features': dict,
-         'volume': dict,
-        }
+PROPS = {
+    "autostart": bool,
+    "debug": bool,
+    "include_in_backups": bool,
+    "kernel": str,
+    "label": str,
+    "maxmem": int,
+    "memory": int,
+    "provides_network": bool,
+    "template": str,
+    "template_for_dispvms": bool,
+    "vcpus": int,
+    "virt_mode": str,
+    "default_dispvm": str,
+    "netvm": str,
+    "features": dict,
+    "volume": dict,
+}
 
 
 def create_inventory(result):
@@ -257,29 +271,35 @@ class QubesVirt(object):
 
         return info
 
-
     def shutdown(self, vmname):
-        """ Make the machine with the given vmname stop running.  Whatever that takes.  """
+        """Make the machine with the given vmname stop running.  Whatever that takes."""
         vm = self.get_vm(vmname)
         vm.shutdown()
         return 0
 
     def pause(self, vmname):
-        """ Pause the machine with the given vmname.  """
+        """Pause the machine with the given vmname."""
 
         vm = self.get_vm(vmname)
         vm.pause()
         return 0
 
     def unpause(self, vmname):
-        """ Unpause the machine with the given vmname.  """
+        """Unpause the machine with the given vmname."""
 
         vm = self.get_vm(vmname)
         vm.unpause()
         return 0
 
-    def create(self, vmname, vmtype="AppVM", label="red", template=None, netvm="default"):
-        """ Start the machine via the given vmid """
+    def create(
+        self,
+        vmname,
+        vmtype="AppVM",
+        label="red",
+        template=None,
+        netvm="default",
+    ):
+        """Start the machine via the given vmid"""
         network_vm = None
         template_vm = ""
         if template:
@@ -291,7 +311,9 @@ class QubesVirt(object):
         else:
             network_vm = self.get_vm(netvm)
         if vmtype == "AppVM":
-            vm = self.app.add_new_vm(vmtype, vmname, label, template=template_vm)
+            vm = self.app.add_new_vm(
+                vmtype, vmname, label, template=template_vm
+            )
             vm.netvm = network_vm
         elif vmtype in ["StandaloneVM", "TemplateVM"] and template_vm:
             vm = self.app.clone_vm(template_vm, vmname, vmtype)
@@ -299,14 +321,14 @@ class QubesVirt(object):
         return 0
 
     def start(self, vmname):
-        """ Start the machine via the given id/name """
+        """Start the machine via the given id/name"""
 
         vm = self.get_vm(vmname)
         vm.start()
         return 0
 
     def destroy(self, vmname):
-        """ Pull the virtual power from the virtual domain, giving it virtually no time to virtually shut down.  """
+        """Pull the virtual power from the virtual domain, giving it virtually no time to virtually shut down."""
 
         vm = self.get_vm(vmname)
         vm.force_shutdown()
@@ -331,7 +353,10 @@ class QubesVirt(object):
             vm.debug = prefs["debug"]
             changed = True
             values_changed.append("debug")
-        if "include_in_backups" in prefs and vm.include_in_backups != prefs["include_in_backups"]:
+        if (
+            "include_in_backups" in prefs
+            and vm.include_in_backups != prefs["include_in_backups"]
+        ):
             vm.include_in_backups = prefs["include_in_backups"]
             changed = True
             values_changed.append("include_in_backups")
@@ -351,7 +376,10 @@ class QubesVirt(object):
             vm.memory = prefs["memory"]
             changed = True
             values_changed.append("memory")
-        if "provides_network" in prefs and vm.provides_network != prefs["provides_network"]:
+        if (
+            "provides_network" in prefs
+            and vm.provides_network != prefs["provides_network"]
+        ):
             vm.provides_network = prefs["provides_network"]
             changed = True
             values_changed.append("provides_network")
@@ -377,7 +405,10 @@ class QubesVirt(object):
                 vm.template = template
                 changed = True
                 values_changed.append("template")
-        if "template_for_dispvms" in prefs and vm.template_for_dispvms != prefs["template_for_dispvms"]:
+        if (
+            "template_for_dispvms" in prefs
+            and vm.template_for_dispvms != prefs["template_for_dispvms"]
+        ):
             vm.template_for_dispvms = prefs["template_for_dispvms"]
             changed = True
             values_changed.append("template_for_dispvms")
@@ -423,9 +454,8 @@ class QubesVirt(object):
 
         return changed, values_changed
 
-
     def undefine(self, vmname):
-        """ Stop a domain, and then wipe it from the face of the earth.  (delete disk/config file) """
+        """Stop a domain, and then wipe it from the face of the earth.  (delete disk/config file)"""
         try:
             self.destroy(vmname)
         except QubesVMNotStartedError:
@@ -455,21 +485,21 @@ class QubesVirt(object):
 
 def core(module):
 
-    state = module.params.get('state', None)
-    guest = module.params.get('name', None)
-    command = module.params.get('command', None)
-    vmtype = module.params.get('vmtype', 'AppVM')
-    label = module.params.get('label', 'red')
-    template = module.params.get('template', None)
-    properties = module.params.get('properties', {})
-    tags = module.params.get('tags', [])
+    state = module.params.get("state", None)
+    guest = module.params.get("name", None)
+    command = module.params.get("command", None)
+    vmtype = module.params.get("vmtype", "AppVM")
+    label = module.params.get("label", "red")
+    template = module.params.get("template", None)
+    properties = module.params.get("properties", {})
+    tags = module.params.get("tags", [])
 
     v = QubesVirt(module)
     res = dict()
 
     # properties will only work with state=present
     if properties:
-        for key,val in properties.items():
+        for key, val in properties.items():
             if not key in PROPS:
                 return VIRT_FAILED, {"Invalid property": key}
             if type(val) != PROPS[key]:
@@ -492,7 +522,7 @@ def core(module):
                     return VIRT_FAILED, {"Missing size for the volume": val}
 
                 allowed_name = []
-                if vmtype == 'AppVM':
+                if vmtype == "AppVM":
                     allowed_name.append("private")
                 elif vmtype in ["StandAloneVM", "TemplateVM"]:
                     allowed_name.append("root")
@@ -510,11 +540,16 @@ def core(module):
                 if not vm.template_for_dispvms:
                     return VIRT_FAILED, {"Missing dispvm capability": val}
         if state == "present" and guest and vmtype:
-            changed, changed_values = v.properties(guest, properties, vmtype, label, template)
+            changed, changed_values = v.properties(
+                guest, properties, vmtype, label, template
+            )
             if tags:
                 # Apply the tags
                 v.tags(guest, tags)
-            return VIRT_SUCCESS, {"Properties updated": changed_values, "changed": changed}
+            return VIRT_SUCCESS, {
+                "Properties updated": changed_values,
+                "changed": changed,
+            }
 
     # This is without any properties
     if state == "present" and guest and vmtype:
@@ -526,10 +561,10 @@ def core(module):
             if tags:
                 # Apply the tags
                 v.tags(guest, tags)
-            res = {'changed': True, 'created': guest}
+            res = {"changed": True, "created": guest}
         return VIRT_SUCCESS, res
 
-    if state and command == 'list_vms':
+    if state and command == "list_vms":
         res = v.list_vms(state=state)
         if not isinstance(res, dict):
             res = {command: res}
@@ -549,16 +584,16 @@ def core(module):
         if command in VM_COMMANDS:
             if not guest:
                 module.fail_json(msg="%s requires 1 argument: guest" % command)
-            if command == 'create':
+            if command == "create":
                 # if not xml:
                 #     module.fail_json(msg="define requires xml argument")
                 try:
                     v.get_vm(guest)
                 except KeyError:
                     v.create(guest, vmtype, label, template, netvm)
-                    res = {'changed': True, 'created': guest}
+                    res = {"changed": True, "created": guest}
                 return VIRT_SUCCESS, res
-            elif command == 'removetags':
+            elif command == "removetags":
                 vm = v.get_vm(guest)
                 changed = False
                 if not tags:
@@ -569,7 +604,10 @@ def core(module):
                         changed = True
                     except QubesTagNotFoundError:
                         pass
-                return VIRT_SUCCESS, {"Message": "Removed the tag(s).", "changed": changed}
+                return VIRT_SUCCESS, {
+                    "Message": "Removed the tag(s).",
+                    "changed": changed,
+                }
             res = getattr(v, command)(guest)
             if not isinstance(res, dict):
                 res = {command: res}
@@ -588,34 +626,33 @@ def core(module):
         if not guest:
             module.fail_json(msg="state change requires a guest specified")
 
-        if state == 'running':
-            if v.status(guest) is 'paused':
-                res['changed'] = True
-                res['msg'] = v.unpause(guest)
-            elif v.status(guest) is not 'running':
-                res['changed'] = True
-                res['msg'] = v.start(guest)
-        elif state == 'shutdown':
-            if v.status(guest) is not 'shutdown':
-                res['changed'] = True
-                res['msg'] = v.shutdown(guest)
-        elif state == 'destroyed':
-            if v.status(guest) is not 'shutdown':
-                res['changed'] = True
-                res['msg'] = v.destroy(guest)
-        elif state == 'paused':
-            if v.status(guest) is 'running':
-                res['changed'] = True
-                res['msg'] = v.pause(guest)
-        elif state == 'undefine':
-            if v.status(guest) is not 'shutdown':
-                res['changed'] = True
-                res['msg'] = v.undefine(guest)
+        if state == "running":
+            if v.status(guest) is "paused":
+                res["changed"] = True
+                res["msg"] = v.unpause(guest)
+            elif v.status(guest) is not "running":
+                res["changed"] = True
+                res["msg"] = v.start(guest)
+        elif state == "shutdown":
+            if v.status(guest) is not "shutdown":
+                res["changed"] = True
+                res["msg"] = v.shutdown(guest)
+        elif state == "destroyed":
+            if v.status(guest) is not "shutdown":
+                res["changed"] = True
+                res["msg"] = v.destroy(guest)
+        elif state == "paused":
+            if v.status(guest) is "running":
+                res["changed"] = True
+                res["msg"] = v.pause(guest)
+        elif state == "undefine":
+            if v.status(guest) is not "shutdown":
+                res["changed"] = True
+                res["msg"] = v.undefine(guest)
         else:
             module.fail_json(msg="unexpected state")
 
         return VIRT_SUCCESS, res
-
 
     module.fail_json(msg="expected state or command parameter to be specified")
 
@@ -623,19 +660,31 @@ def core(module):
 def main():
     module = AnsibleModule(
         argument_spec=dict(
-            name=dict(type='str', aliases=['guest']),
-            state=dict(type='str', choices=['destroyed', 'pause', 'running', 'shutdown', 'undefine', 'present']),
-            command=dict(type='str', choices=ALL_COMMANDS),
-            label=dict(type='str', default='red'),
-            vmtype=dict(type='str', default='AppVM'),
-            template=dict(type='str', default='default'),
-            properties=dict(type='dict', default={}),
-            tags=dict(type='list', default=[]),
+            name=dict(type="str", aliases=["guest"]),
+            state=dict(
+                type="str",
+                choices=[
+                    "destroyed",
+                    "pause",
+                    "running",
+                    "shutdown",
+                    "undefine",
+                    "present",
+                ],
+            ),
+            command=dict(type="str", choices=ALL_COMMANDS),
+            label=dict(type="str", default="red"),
+            vmtype=dict(type="str", default="AppVM"),
+            template=dict(type="str", default="default"),
+            properties=dict(type="dict", default={}),
+            tags=dict(type="list", default=[]),
         ),
     )
 
     if not HAS_QUBES:
-        module.fail_json(msg='The `qubesos` module is not importable. Check the requirements.')
+        module.fail_json(
+            msg="The `qubesos` module is not importable. Check the requirements."
+        )
 
     rc = VIRT_SUCCESS
     try:
@@ -649,5 +698,5 @@ def main():
         module.exit_json(**result)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
