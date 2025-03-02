@@ -124,14 +124,15 @@ import traceback
 try:
     import qubesadmin
     from qubesadmin.exc import QubesVMNotStartedError, QubesTagNotFoundError
-    from jinja2 import Template
 except ImportError:
-    HAS_QUBES = False
-else:
-    HAS_QUBES = True
+    qubesadmin = None
+    QubesVMNotStartedError = None
+    QubesTagNotFoundError = None
+
+from jinja2 import Template
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils._text import to_native
+from ansible.module_utils.common.text.converters import to_native
 
 
 VIRT_FAILED = 1
@@ -681,11 +682,12 @@ def main():
         ),
     )
 
-    if not HAS_QUBES:
+    if not qubesadmin:
         module.fail_json(
             msg="The `qubesos` module is not importable. Check the requirements."
         )
 
+    result = None
     rc = VIRT_SUCCESS
     try:
         rc, result = core(module)
