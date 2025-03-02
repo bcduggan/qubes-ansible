@@ -51,15 +51,9 @@ DOCUMENTATION = """
 #            - name: hosts
 """
 
-import shlex
-import shutil
-
-import os
-import base64
 import subprocess
 
-import ansible.constants as C
-from ansible.module_utils._text import to_bytes, to_native
+from ansible.module_utils.common.text.converters import to_bytes
 from ansible.plugins.connection import ConnectionBase, ensure_connect
 
 
