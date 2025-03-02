@@ -48,7 +48,7 @@ To install packages in the *xchat* vm
 ansible-playbook-3 -i inventory -b install_packages.yaml
 ```
 
-To make sure that one vm (in this example, xchat2) is in running state with particular
+To make sure that one vm (in this example, xchat) is in running state with particular
 details.
 
 ```

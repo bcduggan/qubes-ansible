@@ -5,22 +5,23 @@ localhost
 ansible_connection=local
 
 [appvms]
-supansible
-xchat7
+testvm
+xchat
 
 [appvms:vars]
 ansible_connection=qubes
 
 [debian_templates]
-debian-9
-whonix-gw-14
-whonix-ws-14
+debian-12-xfce
+whonix-gateway-17
+whonix-workstation-17
 
 [debian_templates:vars]
 ansible_connection=qubes
 
 [fedora_templates]
-fedora-28
+fedora-41-xfce
+fedora-41-minimal
 
 [fedora_templates:vars]
 ansible_connection=qubes

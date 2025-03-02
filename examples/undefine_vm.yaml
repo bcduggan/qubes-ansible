@@ -1,10 +1,8 @@
 ---
 - hosts: local
   connection: local
-
   tasks:
     - name: Delete a VM
       qubesos:
         guest: supansible
         state: undefine
-

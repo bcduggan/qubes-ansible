@@ -1,11 +1,10 @@
 ---
 - hosts: local
   connection: local
-
   tasks:
     - name: Make sure the VM is present
       qubesos:
-        guest: xchat2
+        guest: xchat
         state: present
         properties:
           memory: 1200
@@ -18,7 +17,5 @@
 
     - name: Run the VM
       qubesos:
-        guest: xchat2
+        guest: xchat
         state: running
-
-

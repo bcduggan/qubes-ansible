@@ -1,19 +1,15 @@
 ---
 - hosts: local
   connection: local
-
   tasks:
     - name: Create our test vm
       qubesos:
-        guest: supansible
+        guest: testvm
         label: blue
         state: present
-        template: "debian-9"
+        template: "debian-12-xfce"
 
     - name: Get it up and running
       qubesos:
-        guest: supansible
+        guest: testvm
         state: running
-
-
-

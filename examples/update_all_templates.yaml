@@ -4,4 +4,3 @@
   tasks:
     - name: Update the TemplateVM
       package: name=* state=latest
-
