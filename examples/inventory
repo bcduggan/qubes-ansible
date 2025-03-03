@@ -6,7 +6,7 @@ ansible_connection=local
 
 [appvms]
 testvm
-xchat
+social
 
 [appvms:vars]
 ansible_connection=qubes

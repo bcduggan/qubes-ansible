@@ -1,175 +1,201 @@
 Example tasks
-==============
+=============
 
-As we are developing the **qubesos** module heavily, the module will see some update
-to the syntax of the commands and available options.
+The **qubesos** module is under active development, and its syntax and available options may evolve.
+Refer to the examples below to learn more about managing Qubes OS qubes.
 
-For now please check the given examples below to learn more.
+Example inventory file
+-----------------------
 
+An inventory file that automatically includes all qubes in a Qubes OS environment can be created.
+Re-run the following command after adding new qubes. Note that the command will rewrite the existing inventory file.
 
-Our example inventory file
----------------------------
-
-We can use the following command to create our inventory file. This will
-automatically include all of the VMs in your Qubes. You'll have to re-run
-it after creating new VMs, if you want ansible to be able to work with them.
-
-.. warning:: Remember that the following command will rewrite the inventory file.
-
+.. warning:: The following command overwrites the current inventory file.
 
 ::
 
     ansible localhost -m qubesos -a 'command=createinventory'
 
-Once you have an inventory file, you can run ansible playbooks like this:
+Once the inventory file is created, playbooks can be executed as follows:
 
 ::
 
     ansible-playbook -i inventory my_playbook.yaml
 
+If the **[standalonevms]** section is empty in the ``inventory`` file, delete that section along with its connection details.
 
-If the **[standalone_vms]** section is empty in your `inventory` file, please delete that
-and also the corresponding connection details from the `inventory` file.
+Ensuring a qube is present
+---------------------------
 
-Make sure a vm is present
--------------------------
-
-This is the preferred method to create a new vm if it is not there.
-
+This is the preferred method to create (or define) a new qube if it is not already present.
 
 ::
 
     ---
     - hosts: local
-    connection: local
-
-    tasks:
-        - name: Create our test vm
-          qubesos:
-            guest: supansible
-            label: blue
-            state: present
-            template: "debian-9"
-
-Only the *guest* name is the must have value, by default it will use the system default template and netvm.
-The default label color is **red**.
-
-
-Setting different property values to a given vm
---------------------------------------------------
-
-.. note:: This must be done when the vm is in shutdown state. Means this will also work while creating the vm.
-
-
-::
-
-    ---
-    - hosts: local
-    connection: local
-
-    tasks:
-        - name: Make sure the VM is present
-          qubesos:
-            guest: xchat2
-            state: present
-            properties:
-              memory: 1200
-              maxmem: 2400
-              netvm: 'sys-whonix'
-              default_dispvm: 'fedora-28-dvm'
-              label: "yellow"
-
-        - name: Make sure the xchat7 is present
-          qubesos:
-            guest: xchat2
-            state: present
-
-        - name: Run the xchat2 VM
-          qubesos:
-            guest: xchat2
-            state: running
-
-
-.. note:: Always remember to move the state to running to get the vm up and running.
-
-Resizing volume
----------------
-
-This can be done using *volume* property. You can set the "private" volume size
-in AppVMs, and "root" volume size in StandAloneVM or TemplateVM. Right now it takes
-the size in bytes.
-
-::
-
+      connection: local
       tasks:
-    - name: Make sure the VM is present
-      qubesos:
-        guest: xchat2
-        state: present
-        properties:
-          memory: 1200
-          maxmem: 2400
-          netvm: 'sys-whonix'
-          label: "yellow"
-          volume:
-            name: "private"
-            size: "5368709120"
+          - name: Create a test qube
+            qubesos:
+              guest: supansible
+              label: blue
+              state: present
+              template: "debian-9"
+
+Note: Only the *guest* parameter is mandatory. By default, the module uses the system default template and netvm, and the default label color is **red**.
+
+Creating multiple qubes with custom properties and tags
+---------------------------------------------------------
+
+The following example demonstrates creating multiple qubes with specific labels, templates, properties, and a policy file for inter-qube communication.
+
+::
+
+    ---
+    - hosts: local
+      connection: local
+      tasks:
+          - name: Create vault-demo with custom properties
+            qubesos:
+              guest: vault-demo
+              label: black
+              state: present
+              template: "fedora-41-xfce"
+              properties:
+                memory: 600
+                maxmem: 800
+                netvm: ""
+
+          - name: Create work-demo qube using a template
+            qubesos:
+              guest: work-demo
+              label: blue
+              state: present
+              template: "fedora-41-xfce"
+
+          - name: Create project-demo qube using a template
+            qubesos:
+              guest: project-demo
+              label: orange
+              state: present
+              template: "fedora-41-xfce"
+
+          - name: Create policy file for qube communications
+            copy:
+              dest: /etc/qubes/policy.d/10-demo.policy
+              content: |
+                qubes.Gpg * work-demo vault-demo allow
+                project.Service1 * work-demo @default allow target=project-demo
+              mode: '0755'
+
+Setting different property values for a qube
+---------------------------------------------
+
+Properties can be applied during qube creation or to an existing (but shut down) qube.
+The following example sets various properties such as memory, maximum memory, netvm, and default_dispvm.
+
+::
+
+    ---
+    - hosts: local
+      connection: local
+      tasks:
+          - name: Set properties for social qube
+            qubesos:
+              guest: social
+              state: present
+              properties:
+                memory: 1200
+                maxmem: 2400
+                netvm: 'sys-whonix'
+                default_dispvm: 'fedora-41-dvm'
+                label: "yellow"
+
+          - name: Ensure the social qube is defined
+            qubesos:
+              guest: social
+              state: present
+
+          - name: Start the social qube
+            qubesos:
+              guest: social
+              state: running
+
+.. note:: Change the state to ``running`` to power on the qube.
+
+Resizing a qube's volume
+------------------------
+
+A qube's volume can be resized using the *volume* property.
+For App qubes, set the "private" volume size; for Standalone or Template qubes, set the "root" volume size.
+The size must be specified in bytes.
+
+::
+
+    ---
+    - hosts: local
+      connection: local
+      tasks:
+          - name: Resize volume for social qube
+            qubesos:
+              guest: social
+              state: present
+              properties:
+                memory: 1200
+                maxmem: 2400
+                netvm: 'sys-whonix'
+                label: "yellow"
+                volume:
+                  name: "private"
+                  size: "5368709120"
 
 Available properties
-----------------------
+--------------------
 
-The following are the different available properties and their data type.
+The following properties and their types are supported:
 
-- 'autostart': bool
-- 'debug': bool
-- 'include_in_backups': bool
-- 'kernel': str
-- 'label': str
-- 'maxmem': int
-- 'memory': int
-- 'provides_network': bool
-- 'template': str
-- 'template_for_dispvms': bool
-- 'vcpus': int
-- 'virt_mode': str
-- 'default_dispvm': str
-- 'netvm': str
-- 'features': dict[str,str]
-- 'volume': dict[str,str]
+- **autostart**: bool
+- **debug**: bool
+- **include_in_backups**: bool
+- **kernel**: str
+- **label**: str
+- **maxmem**: int
+- **memory**: int
+- **provides_network**: bool
+- **template**: str
+- **template_for_dispvms**: bool
+- **vcpus**: int
+- **virt_mode**: str
+- **default_dispvm**: str
+- **netvm**: str
+- **features**: dict[str, str]
+- **volume**: dict[str, str]
 
-
-If you want to make changes to any existing vm, then first move it to *shutdown*
-state and then use properties along with the *present* state to change any
-value.
-
-We can even add/update/remove ``features`` from a VM using properties.
+To modify an existing qube's properties, first shut it down and then apply the new properties with state ``present``.
+Features can be added, updated, or removed via properties:
 
 ::
 
     ---
     - hosts: local
-    connection: local
+      connection: local
+      tasks:
+          - name: Configure features for social qube
+            qubesos:
+              guest: social
+              state: present
+              properties:
+                memory: 1200
+                maxmem: 2400
+                netvm: 'sys-whonix'
+                default_dispvm: 'fedora-41-dvm'
+                label: "yellow"
+                features:
+                  life: "better"
+                  can_fix_world_problem: False
+                  news: "good"
 
-    tasks:
-        - name: Make sure the VM is present with right features
-          qubesos:
-            guest: xchat2
-            state: present
-            properties:
-              memory: 1200
-              maxmem: 2400
-              netvm: 'sys-whonix'
-              default_dispvm: 'fedora-28-dvm'
-              label: "yellow"
-              features:
-                life: "better"
-                can_fix_world_problem: False
-                news: "good"
-
-
-To delete a feature (if that exists), mark the value as **"None"**. To make it
-an empty string, that is the False value, use **""** as value. Example is given
-below.
+To remove a feature, set its value to **"None"**; to clear a feature (i.e. set to an empty string), use **""**:
 
 ::
 
@@ -177,218 +203,197 @@ below.
       life: "None"
       news: ""
 
+Adding tags to a qube
+---------------------
 
-Adding tags to a vm
--------------------
-
-We can also add tags to a VM using the tags values. It has to be a list of strings.
+Tags (a list of strings) can be assigned to a qube for categorization.
 
 ::
 
     ---
     - hosts: local
-    connection: local
-
-    tasks:
-        - name: Make sure right tags are assigned
-          qubesos:
-            guest: xchat2
-            state: present
-            tags:
-              - "Linux"
-              - "IRC"
-              - "Chat"
+      connection: local
+      tasks:
+          - name: Assign tags to social qube
+            qubesos:
+              guest: social
+              state: present
+              tags:
+                - "Linux"
+                - "IRC"
+                - "Chat"
 
 Different available states
----------------------------
+--------------------------
 
-- destroyed
-- pause
-- running
-- shutdown
-- undefine
-- present
+The module supports the following states:
 
-.. warning:: The **undefine** state will remove the vm and all data related to it. So, use with care.
+- **destroyed**
+- **pause**
+- **running**
+- **shutdown**
+- **undefine**
+- **present**
 
+.. warning:: The **undefine** state will remove the qube and all associated data. Use with caution.
 
 Different available commands
 -----------------------------
 
-The following commands are currently available.
+The module also supports several non-idempotent commands:
 
-shutdown
-+++++++++
+**shutdown**
+++++++++++++
 
-It will try to shutdown the vm normally.
-
-::
-
-    ansible localhost -i inventory -m qubesos -a 'guest=xhcat2 command=shutdown'
-
-destroy
-++++++++
-
-The *destroy* command will forcefully shutdown the guest now.
+Gracefully shut down the qube.
 
 ::
 
-    ansible localhost -i inventory -m qubesos -a 'guest=xhcat2 command=destroy'
+    ansible localhost -m qubesos -a 'guest=social command=shutdown'
 
-
-.. note:: Use the *destroyed* state to properly destroy a vm than this command.
-
-removetags
+**destroy**
 +++++++++++
 
-Use this command with a list of tags to remove them from a given VM.
+Forcefully shut down the qube immediately.
+
+::
+
+    ansible localhost -m qubesos -a 'guest=social command=destroy'
+
+.. note:: It is recommended to use the **destroyed** state for proper qube destruction.
+
+**removetags**
+++++++++++++++
+
+Remove specified tags from a qube.
 
 ::
 
     ---
     - hosts: local
-    connection: local
+      connection: local
+      tasks:
+          - name: Remove tags from social qube
+            qubesos:
+              guest: social
+              command: removetags
+              tags:
+                - "Linux"
+                - "IRC"
+                - "Chat"
 
-    tasks:
-        - name: Make sure right tags are removed
-          qubesos:
-            guest: xchat2
-            command: removetags
-            tags:
-              - "Linux"
-              - "IRC"
-              - "Chat"
+Find qubes by state
+-------------------
 
-Find all vms with a particular state
---------------------------------------
-
-The following example will find all the vms with running state.
+List all qubes with a particular state (for example, running):
 
 ::
 
-    ansible localhost -i inventory -m qubesos -a 'state=running command=list_vms'
+    ansible localhost -m qubesos -a 'state=running command=list_vms'
 
+Queries can similarly be performed for qubes with states such as *shutdown* or *paused*.
 
-In the same way you can find vms with *shutdown* or *paused* state.
+Installing packages, copying files, and fetching files
+-------------------------------------------------------
 
-
-Install a package and copy to file to the remote vm and fetch some file back
-----------------------------------------------------------------------------
-
-Here is an example playbook (install_packages.yaml) for the same.
-
+The following example playbook (``install_packages.yaml``) installs a package, copies a configuration file to a qube, and fetches a file from a qube:
 
 ::
 
     ---
-    - hosts: xchat7
-    tasks:
-    - name: Ensure sl is at the latest version
-      ansible.builtin.package:
-        name: sl
-        state: latest
-      become: true
-    - name: example copying file with owner and permissions
-        copy:
-        src: foo.conf
-        dest: /etc/foo.conf
-    - name: Fetch os-relase
-        fetch:
-        src: /etc/os-release
-        dest: /tmp/fetched
+    - hosts: social
+      tasks:
+        - name: Ensure sl is installed at the latest version
+          ansible.builtin.package:
+            name: sl
+            state: latest
+          become: true
+        - name: Copy configuration file to the qube
+          copy:
+            src: foo.conf
+            dest: /etc/foo.conf
+        - name: Fetch OS release information from the qube
+          fetch:
+            src: /etc/os-release
+            dest: /tmp/fetched
 
+Run a command in every running qube
+------------------------------------
 
-You can run the playbook using the following command.
-
-::
-
-    ansible-playbook -i inventory -b install_packages.yaml
-
-
-You can also pass `-u different_user` or the set **ansible_user** value to run the above
-playbook as a different user in the vm.
-
-
-Execute a command in every running vm
----------------------------------------
-
-First remember to create our inventory file using ``createinventory`` command.
-Then you can use the following playbook. We are just running ``hostname`` command
-in every running vm.
+After creating the inventory file using the ``createinventory`` command, a playbook can be used to execute a command (e.g. ``hostname``) on every running qube:
 
 ::
 
     ---
     - hosts: localhost
-    connection: local
-    tasks:
-        - name: Find running hosts
-          qubesos:
-            command: list_vms
-            state: running
-        register: rhosts
+      connection: local
+      tasks:
+          - name: Retrieve list of running qubes
+            qubesos:
+              command: list_vms
+              state: running
+            register: rhosts
 
     - hosts: "{{ hostvars['localhost']['rhosts']['list_vms'] }}"
-    connection: qubes
-    tasks:
-        - name: get hostname
-        command: hostname
+      connection: qubes
+      tasks:
+          - name: Get hostname of each qube
+            command: hostname
 
+Run a command in every running qube except system qubes
+-------------------------------------------------------
 
-Execute a command in every running vm except sys vms
------------------------------------------------------
+Exclude system qubes (those whose names start with ``sys-``):
 
 ::
 
     ---
     - hosts: localhost
-    connection: local
-    tasks:
-        - name: Find running hosts
-          qubesos:
-            command: list_vms
-            state: running
-        register: rhosts
+      connection: local
+      tasks:
+          - name: Retrieve running qubes
+            qubesos:
+              command: list_vms
+              state: running
+            register: rhosts
 
-        - name: Find non system vms
-        set_fact:
-            myvms: "{% for name in rhosts.list_vms %}{% if not name.startswith('sys-') %}{{ name }},{% endif %}{% endfor %}"
-
+          - name: Filter out system qubes
+            set_fact:
+              myvms: "{% for name in rhosts.list_vms if not name.startswith('sys-') %}{{ name }},{% endfor %}"
 
     - hosts: "{{ hostvars['localhost']['myvms'] }}"
-    connection: qubes
-    tasks:
-        - name: Get hostname
-        command: hostname
+      connection: qubes
+      tasks:
+          - name: Get hostname of each non-system qube
+            command: hostname
 
-Shutdown all vms except the system vms
-----------------------------------------
+Shutdown all qubes except system qubes
+--------------------------------------
 
-We are not shutting down any VM which starts with **sys-** in this example.
+Shut down all running qubes except those whose names start with ``sys-``:
 
 ::
 
     ---
     - hosts: localhost
-    connection: local
-    tasks:
-        - name: Find running hosts
-          qubesos:
-            command: list_vms
-            state: running
-        register: rhosts
+      connection: local
+      tasks:
+          - name: Retrieve running qubes
+            qubesos:
+              command: list_vms
+              state: running
+            register: rhosts
 
-        - debug: var=rhosts
+          - debug: var=rhosts
 
-        - name: Shutdown each vm
-        qubesos:
-            command: destroy
-            guest: "{{ item }}"
-        with_items: "{{ rhosts.list_vms }}"
-        when: item.startswith("sys-") != True
+          - name: Shutdown each non-system qube
+            qubesos:
+              command: destroy
+              guest: "{{ item }}"
+            with_items: "{{ rhosts.list_vms }}"
+            when: not item.startswith("sys-")
 
-
-You can use the above ``shutdown_all.yaml`` playbook using the following command.
+The above playbook (e.g. ``shutdown_all.yaml``) can be executed using:
 
 ::
 

@@ -1,5 +1,5 @@
 ---
-- hosts: xchat
+- hosts: social
   tasks:
   - name: Ensure sl is at the latest version
     ansible.builtin.package:

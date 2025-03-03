@@ -17,7 +17,7 @@ ansible_connection=local
 
 [appvms]
 testvm
-xchat
+social
 
 [appvms:vars]
 ansible_connection=qubes
@@ -43,29 +43,29 @@ ansible_connection=qubes
 ```yaml
 local:
   hosts:
-    localhost
+    localhost: {}
   vars:
     ansible_connection: local
 
 appvms:
   hosts:
-    testvm
-    xchat
+    testvm: {}
+    social: {}
   vars:
     ansible_connection: qubes
 
 debian_templates:
   hosts:
-    debian-12-xfce
-    whonix-gateway-17
-    whonix-workstation-17
+    debian-12-xfce: {}
+    whonix-gateway-17: {}
+    whonix-workstation-17: {}
   vars:
     ansible_connection: qubes
 
 fedora_templates:
   hosts:
-    fedora-41-xfce
-    fedora-41-minimal
+    fedora-41-xfce: {}
+    fedora-41-minimal: {}
   vars:
     ansible_connection: qubes
 ```
@@ -82,12 +82,12 @@ To delete one particular qube:
 ansible-playbook-3 -i inventory undefine_vm.yaml
 ```
 
-To install packages in the *xchat* qube:
+To install packages in the *social* qube:
 ```bash
 ansible-playbook-3 -i inventory -b install_packages.yaml
 ```
 
-To make sure that one vm (in this example, xchat) is in running state with particular details:
+To make sure that one vm (in this example, social) is in running state with particular details:
 ```bash
 ansible-playbook-3 -i inventory presentstate.yaml
 ```

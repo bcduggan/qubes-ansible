@@ -7,7 +7,7 @@ local:
 appvms:
   hosts:
     testvm
-    xchat
+    social
   vars:
     ansible_connection: qubes
 

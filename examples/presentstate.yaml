@@ -4,7 +4,7 @@
   tasks:
     - name: Make sure the VM is present
       qubesos:
-        guest: xchat
+        guest: social
         state: present
         properties:
           memory: 1200
@@ -17,5 +17,5 @@
 
     - name: Run the VM
       qubesos:
-        guest: xchat
+        guest: social
         state: running
