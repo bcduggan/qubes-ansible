@@ -1,6 +1,0 @@
----
-- hosts: templatevms
-  become: true
-  tasks:
-    - name: Update the TemplateVM
-      package: name=* state=latest

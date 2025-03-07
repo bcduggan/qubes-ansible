@@ -2,36 +2,52 @@
 
 This project provides an Ansible connection plugin to interact with [Qubes OS](https://qubes-os.org) virtual machines called `qubes` and an Ansible module to manage the state of your qubes.
 
-## Documentation
-
-For comprehensive usage instructions, advanced commands, and setup details, please refer to the full documentation available [online](https://qubes-ansible.readthedocs.io/en/latest/).
-
 ## Setup
 
-### Module installation
+To use this project, you must install both Ansible and the project itself in **dom0**.
+This project should also work from a management qube.
+However, this functionality has not yet been fully tested.
+The project consists of two primary components:
 
-1. Copy the `ansible_module` directory to a known location on your system. For example, you can place it in:
-   ```
-   /usr/share/ansible_module
-   ```
+- The **qubes** connection plugin
+- The **qubesos** module
 
-2. This project is designed to run from **dom0** or from any qube with required RPC policies.
+### Clone the project
 
-> FIXME: Provide RPC policies.
+On a qube, say `work-qubesos`, clone the repository using the following command:
 
-### Ansible installation and Module/Connection configuration
+```bash
+git clone https://github.com/fepitre/qubes-ansible
+```
 
-1. Install Ansible:
-   ```bash
-   sudo qubes-dom0-update ansible
-   ```
+### Install Ansible
 
-2. Modify your `/etc/ansible/ansible.cfg` file to include the following lines:
-   ```ini
-   [defaults]
-   library = /usr/share/ansible_module/
-   connection_plugins = /usr/share/ansible_module/conns/
-   ```
+On Qubes 4.2+ you can install Ansible with:
+
+```bash
+sudo qubes-dom0-update ansible
+```
+
+### Copy the `ansible_module` directory to dom0
+
+Assuming you have checked out the repository in `/home/user/qubes_ansible` on the VM named *work-qubesos*, copy the module files to `/usr/share/ansible_module/` in **dom0** using these commands:
+
+```bash
+sudo su -
+mkdir -p /usr/share/ansible_module/conns
+qvm-run -p work-qubesos 'cat /home/user/qubes_ansible/ansible_module/qubesos.py' > /usr/share/ansible_module/qubesos.py
+qvm-run -p work-qubesos 'cat /home/user/qubes_ansible/ansible_module/conns/qubes.py' > /usr/share/ansible_module/conns/qubes.py
+```
+
+### Configure Ansible
+
+Update your `/etc/ansible/ansible.cfg` file by adding these lines so that Ansible can locate the module and connection plugin:
+
+```ini
+[defaults]
+library = /usr/share/ansible_module/
+connection_plugins = /usr/share/ansible_module/conns/
+```
 
 ## Writing playbooks and roles
 
@@ -40,7 +56,7 @@ For comprehensive usage instructions, advanced commands, and setup details, plea
 
 ## Examples
 
-See the [examples](examples/) directory for sample playbooks and role tasks demonstrating common usage scenarios.
+See the [examples](EXAMPLES.md) for sample playbooks and role tasks demonstrating common usage scenarios.
 
 ## Development status
 
