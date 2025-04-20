@@ -39,12 +39,6 @@ DOCUMENTATION = """
         vars:
             - name: inventory_hostname
             - name: ansible_host
-      remote_user:
-        description:
-            - The user to execute as inside the qube.
-        default: user
-        vars:
-            - name: ansible_user
       qubes_shell_rpc:
         description:
             - Qubes shell RPC to execute inside the qube.
@@ -81,12 +75,6 @@ class Connection(ConnectionBase):
         )
         self._remote_vmname = self._play_context.remote_addr
         self._connected = False
-        # Use the provided remote_user if set; otherwise default to "user".
-        self.user = (
-            self._play_context.remote_user
-            if self._play_context.remote_user
-            else "user"
-        )
 
     def _qubes(
         self, cmd: str, in_data: bytes = None
@@ -104,8 +92,6 @@ class Connection(ConnectionBase):
             cmd += "\n"
 
         local_cmd = ["qvm-run", "--pass-io", "--service"]
-        if self.user != "user":
-            local_cmd.extend(["-u", self.user])
         local_cmd.extend([self._remote_vmname, self.get_option("qubes_shell_rpc")])
         local_cmd_bytes = [
             to_bytes(arg, errors="surrogate_or_strict") for arg in local_cmd
