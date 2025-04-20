@@ -45,6 +45,12 @@ DOCUMENTATION = """
         default: user
         vars:
             - name: ansible_user
+      qubes_shell_rpc:
+        description:
+            - Qubes shell RPC to execute inside the qube.
+        default: qubes.VMShell
+        vars:
+            - name: qubes_shell_rpc
 """
 
 import subprocess
@@ -83,7 +89,7 @@ class Connection(ConnectionBase):
         )
 
     def _qubes(
-        self, cmd: str, in_data: bytes = None, shell: str = "qubes.VMShell"
+        self, cmd: str, in_data: bytes = None
     ):
         """
         Execute a command in the qube via qvm-run.
@@ -100,7 +106,7 @@ class Connection(ConnectionBase):
         local_cmd = ["qvm-run", "--pass-io", "--service"]
         if self.user != "user":
             local_cmd.extend(["-u", self.user])
-        local_cmd.extend([self._remote_vmname, shell])
+        local_cmd.extend([self._remote_vmname, self.get_option("qubes_shell_rpc")])
         local_cmd_bytes = [
             to_bytes(arg, errors="surrogate_or_strict") for arg in local_cmd
         ]
