@@ -158,12 +158,7 @@ class Connection(ConnectionBase):
         with open(in_path, "rb") as fobj:
             source_data = fobj.read()
 
-        # Try using VMRootShell first; fallback to VMShell if needed.
-        retcode, _, _ = self._qubes(
-            f'cat > "{out_path}"\n', source_data, shell="qubes.VMRootShell"
-        )
-        if retcode == 127:
-            retcode, _, _ = self._qubes(f'cat > "{out_path}"\n', source_data)
+        retcode, _, _ = self._qubes(f'cat > "{out_path}"\n', source_data)
         if retcode != 0:
             raise RuntimeError(f"Failed to put_file to {out_path}")
 
