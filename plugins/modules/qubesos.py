@@ -319,7 +319,8 @@ class QubesVirt(object):
             vm.netvm = network_vm
         elif vmtype in ["StandaloneVM", "TemplateVM"] and template_vm:
             vm = self.app.clone_vm(template_vm, vmname, vmtype, ignore_errors=(self.app.local_name != "dom0"))
-            vm.label = label
+            if vmtype == "StandaloneVM":
+                vm.label = label
         return 0
 
     def start(self, vmname):
