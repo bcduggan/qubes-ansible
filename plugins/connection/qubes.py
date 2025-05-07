@@ -42,6 +42,9 @@ DOCUMENTATION = """
       remote_user:
         description:
             - The user to execute as inside the qube.
+        choices:
+            - user
+            - root
         default: user
         vars:
             - name: ansible_user
@@ -82,9 +85,7 @@ class Connection(ConnectionBase):
             else "user"
         )
 
-    def _qubes(
-        self, cmd: str, in_data: bytes = None, shell: str = "qubes.VMShell"
-    ):
+    def _qubes(self, cmd: str, in_data: bytes = None):
         """
         Execute a command in the qube via qvm-run.
 
@@ -97,10 +98,12 @@ class Connection(ConnectionBase):
         if not cmd.endswith("\n"):
             cmd += "\n"
 
-        local_cmd = ["qvm-run", "--pass-io", "--service"]
-        if self.user != "user":
-            local_cmd.extend(["-u", self.user])
-        local_cmd.extend([self._remote_vmname, shell])
+        local_cmd = ["qvm-run", "--pass-io", "--service", self._remote_vmname]
+        # The Ansible module framework catches invalid remote_user values
+        if self.user == "root":
+            local_cmd.append("qubes.VMRootShell")
+        else:
+            local_cmd.append("qubes.VMShell")
         local_cmd_bytes = [
             to_bytes(arg, errors="surrogate_or_strict") for arg in local_cmd
         ]
