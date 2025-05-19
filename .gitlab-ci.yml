@@ -10,13 +10,16 @@ include:
   stage: tests
   tags:
     - vm-kvm
-  script:
+  after_script:
+    - ci/codecov-wrapper -F unittests
+  before_script:
     # install dependencies
-    - sudo qubes-dom0-update -y ansible python3-pytest
+    - sudo qubes-dom0-update -y ansible python3-pytest python3-coverage perl-Digest-SHA
     # install from artifacts
     - find $CI_PROJECT_DIR/artifacts/repository -name '*.noarch.rpm' -exec sudo dnf install -y {} \+
+  script:
     # run ansible's tests
-    - PYTHONPATH=/usr/share/ansible pytest -vvv /usr/share/ansible/tests/
+    - cd /usr/share/ansible && sudo coverage run --data-file=$CI_PROJECT_DIR/.coverage --include=plugins/modules/qubesos.py,plugins/connection/qubes.py -m pytest -vvv tests/qubes/
 
 r4.3:mgmt-host:
   extends: .mgmt-host-template
