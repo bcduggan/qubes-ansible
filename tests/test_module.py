@@ -3,7 +3,7 @@ import pytest
 import time
 
 from plugins.modules.qubesos import core, VIRT_SUCCESS, VIRT_FAILED
-from tests.conftest import qubes, vmname, Module
+from tests.qubes.conftest import qubes, vmname, Module
 
 
 def test_create_start_shutdown_destroy_remove(qubes, vmname, request):

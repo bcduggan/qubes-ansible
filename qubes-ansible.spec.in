@@ -34,13 +34,13 @@ Tests for the module and the connection.
 rm -rf %{buildroot}
 %{__mkdir} -p %{buildroot}%{_datadir}/ansible/plugins/modules
 %{__mkdir} -p %{buildroot}%{_datadir}/ansible/plugins/connection
-%{__mkdir} -p %{buildroot}%{_datadir}/ansible/tests
+%{__mkdir} -p %{buildroot}%{_datadir}/ansible/tests/qubes
 
 # Install the qubesos module and qubes connection plugin
 install -m 644 plugins/modules/qubesos.py %{buildroot}%{_datadir}/ansible/plugins/modules/qubesos.py
 install -m 644 plugins/connection/qubes.py %{buildroot}%{_datadir}/ansible/plugins/connection/qubes.py
 
-install -m 644 tests/*.py %{buildroot}%{_datadir}/ansible/tests/
+install -m 644 tests/*.py %{buildroot}%{_datadir}/ansible/tests/qubes/
 
 %files
 %doc README.md LICENSE EXAMPLES.md
@@ -48,7 +48,7 @@ install -m 644 tests/*.py %{buildroot}%{_datadir}/ansible/tests/
 %{_datadir}/ansible/plugins/connection/qubes.py
 
 %files tests
-%{_datadir}/ansible/tests/*.py
+%{_datadir}/ansible/tests/qubes/*.py
 
 %changelog
 @CHANGELOG@
