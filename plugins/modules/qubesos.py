@@ -628,26 +628,26 @@ def core(module):
         if not guest:
             module.fail_json(msg="State change requires a guest specified")
         if state == "running":
-            if v.status(guest) is "paused":
+            if v.status(guest) == "paused":
                 res["changed"] = True
                 res["msg"] = v.unpause(guest)
-            elif v.status(guest) is not "running":
+            elif v.status(guest) != "running":
                 res["changed"] = True
                 res["msg"] = v.start(guest)
         elif state == "shutdown":
-            if v.status(guest) is not "shutdown":
+            if v.status(guest) != "shutdown":
                 res["changed"] = True
                 res["msg"] = v.shutdown(guest)
         elif state == "destroyed":
-            if v.status(guest) is not "shutdown":
+            if v.status(guest) != "shutdown":
                 res["changed"] = True
                 res["msg"] = v.destroy(guest)
         elif state == "paused":
-            if v.status(guest) is "running":
+            if v.status(guest) == "running":
                 res["changed"] = True
                 res["msg"] = v.pause(guest)
         elif state == "absent":
-            if v.status(guest) is "shutdown":
+            if v.status(guest) == "shutdown":
                 res["changed"] = True
                 res["msg"] = v.remove(guest)
         else:
