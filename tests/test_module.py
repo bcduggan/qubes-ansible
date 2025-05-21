@@ -193,6 +193,43 @@ def test_missing_netvm(qubes, vmname, request):
     assert "Missing netvm" in res
 
 
+def test_default_netvm(qubes, vm, netvm, request):
+    """
+    Able to reset back to default netvm without needing to mention it by name
+    """
+    default_netvm = vm.netvm
+
+    # Change to non-default netvm
+    change_netvm_rc, change_netvm_res = core(
+        Module(
+            {
+                "state": "present",
+                "name": vm.name,
+                "properties": {"netvm": netvm.name},
+            }
+	)
+    )
+    assert "netvm" in change_netvm_res["Properties updated"]
+    assert change_netvm_rc == VIRT_SUCCESS
+
+    # Ability to reset back to default netvm, whichever it is
+    reset_netvm_rc, reset_netvm_res = core(
+        Module(
+            {
+                "state": "present",
+                "name": vm.name,
+                "properties": {"netvm": "*default*"},
+            }
+	)
+    )
+    assert "netvm" in reset_netvm_res["Properties updated"]
+    assert default_netvm != netvm
+    assert reset_netvm_rc == VIRT_SUCCESS
+
+    qubes.domains.refresh_cache(force=True)
+    assert qubes.domains[vm.name].netvm == default_netvm
+
+
 def test_missing_default_dispvm(qubes):
     # default_dispvm does not exist
     rc, res = core(
