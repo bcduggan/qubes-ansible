@@ -94,6 +94,18 @@ def test_list_info_and_inventory(tmp_path, qubes):
     # Use a temporary directory for inventory
     os.chdir(tmp_path)
 
+    # Create a standalone VM (by default we don't have any)
+    core(
+        Module(
+            {
+                "command": "create",
+                "name": "teststandalone",
+                "vmtype": "StandaloneVM",
+                "template": "debian-12-xfce",
+            }
+        )
+    )
+
     # Collect expected VMs by class
     expected = {}
     for vm in qubes.domains.values():
