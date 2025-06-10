@@ -250,6 +250,7 @@ class QubesVirt(object):
             return "running"
         if vm.is_halted():
             return "shutdown"
+        return None
 
     def get_states(self):
         state = []
