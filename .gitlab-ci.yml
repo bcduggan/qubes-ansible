@@ -6,6 +6,10 @@ include:
   - file: /r4.3/gitlab-host.yml
     project: QubesOS/qubes-continuous-integration
 
+lint:
+  extends: .lint
+  stage: tests
+
 .mgmt-host-template:
   stage: tests
   tags:

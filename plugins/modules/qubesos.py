@@ -187,36 +187,45 @@ PROPS = {
 
 
 def create_inventory(result):
-    "Creates the inventory file dynamically for QubesOS"
+    """
+    Creates the inventory file dynamically for QubesOS
+    """
     template_str = """[local]
 localhost
 
 [local:vars]
 ansible_connection=local
 
+{% if result.AppVM %}
 [appvms]
 {% for item in result.AppVM %}
 {{ item -}}
 {% endfor %}
 
+[appvms:vars]
+ansible_connection=qubes
+{% endif %}
+
+{% if result.TemplateVM %}
 [templatevms]
 {% for item in result.TemplateVM %}
 {{ item -}}
 {% endfor %}
 
+[templatevms:vars]
+ansible_connection=qubes
+{% endif %}
+
+{% if result.StandaloneVM %}
 [standalonevms]
 {% for item in result.StandaloneVM %}
 {{ item -}}
 {% endfor %}
 
-[appvms:vars]
+[standalonevms:vars]
 ansible_connection=qubes
+{% endif %}
 
-[templatevms:vars]
-ansible_connection=qubes
-
-[standalone:vars]
-ansible_connection=qubes
 """
     template = Template(template_str)
     res = template.render(result=result)
@@ -241,6 +250,7 @@ class QubesVirt(object):
             return "running"
         if vm.is_halted():
             return "shutdown"
+        return None
 
     def get_states(self):
         state = []
