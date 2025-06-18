@@ -1,6 +1,7 @@
 import os
 import subprocess
 import uuid
+import json
 from typing import List
 
 import pytest
@@ -24,7 +25,6 @@ def run_playbook(tmp_path):
         # Run ansible-playbook
         cmd = [
             "ansible-playbook",
-            "-vvv",
             "-i",
             f"localhost,{','.join(vms)}",
             "-c",
@@ -34,7 +34,11 @@ def run_playbook(tmp_path):
             str(pb_file),
         ]
         result = subprocess.run(
-            cmd, cwd=tmp_path, capture_output=True, text=True
+            cmd,
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            env={"ANSIBLE_CONFIG": Path(__file__).parent / "ansible.cfg"},
         )
         return result
 
@@ -112,8 +116,14 @@ def test_properties_and_tags_playbook(run_playbook, request):
     assert result.returncode == 0, result.stderr
 
     # Ensure properties and tags were applied
-    assert "changed=" in result.stdout
-    assert "tag1" in result.stdout and "tag2" in result.stdout
+    run_output = json.loads(result.stdout)
+    assert run_output["plays"][0]["tasks"][1]["hosts"]["localhost"][
+        "changed"
+    ], result.stdout
+    # Tags don't appear in qubes status output
+    # assert (
+    #     "tag1" in run_output["plays"][0]["tasks"][2]["hosts"]["localhost"]["status"]
+    # ), result.stdout
 
 
 def test_inventory_playbook(run_playbook, tmp_path, qubes):
@@ -152,7 +162,8 @@ def test_vm_connection(vm, run_playbook):
         "gather_facts": False,
         "connection": "qubes",
     }
-    playbook = [
+
+    default_user_playbook = [
         {
             **play_attrs,
             "tasks": [
@@ -164,6 +175,12 @@ def test_vm_connection(vm, run_playbook):
                 },
             ],
         },
+    ]
+
+    default_user_result = run_playbook(default_user_playbook, vms=[vm.name])
+    assert default_user_result.returncode == 0, default_user_result.stdout
+
+    connect_user_playbook = [
         {
             **play_attrs,
             "remote_user": "user",
@@ -176,6 +193,12 @@ def test_vm_connection(vm, run_playbook):
                 },
             ],
         },
+    ]
+
+    connect_user_result = run_playbook(connect_user_playbook, vms=[vm.name])
+    assert connect_user_result.returncode == 0, connect_user_result.stdout
+
+    connect_root_playbook = [
         {
             **play_attrs,
             "remote_user": "root",
@@ -188,6 +211,12 @@ def test_vm_connection(vm, run_playbook):
                 },
             ],
         },
+    ]
+
+    connect_root_result = run_playbook(connect_root_playbook, vms=[vm.name])
+    assert connect_root_result.returncode == 0, connect_root_result.stdout
+
+    become_playbook = [
         {
             **play_attrs,
             "become": True,
@@ -201,14 +230,15 @@ def test_vm_connection(vm, run_playbook):
             ],
         },
     ]
-    result = run_playbook(playbook, vms=[vm.name])
-    # Playbook should run successfully
-    assert result.returncode == 0, result.stderr
 
+    become_result = run_playbook(become_playbook, vms=[vm.name])
+    assert become_result.returncode == 0, become_result.returncode
+
+    invalid_user = "somebody"
     invalid_user_playbook = [
         {
             **play_attrs,
-            "remote_user": "invalid_user",
+            "remote_user": invalid_user,
             "tasks": [
                 {
                     "name": "No-op",
@@ -217,10 +247,15 @@ def test_vm_connection(vm, run_playbook):
             ],
         },
     ]
+
     invalid_user_result = run_playbook(invalid_user_playbook, vms=[vm.name])
-    # Playbook should fail because connection module only supports remote users in ["root", "user"].
-    # Only needs to be tested once.
-    assert invalid_user_result.returncode == 2, invalid_user_result.stderr
+    assert invalid_user_result.returncode == 2, invalid_user_result.stdout
+
+    invalid_user_output = json.loads(invalid_user_result.stdout)
+    assert (
+        invalid_user_output["plays"][0]["tasks"][0]["hosts"][vm.name]["msg"]
+        == f'Invalid value "{invalid_user}" for configuration option "plugin_type: connection plugin: qubes setting: remote_user ", valid values are: user, root'
+    ), invalid_user_result.stdout
 
 
 def test_minimalvm_connection(minimalvm, run_playbook):
@@ -229,7 +264,8 @@ def test_minimalvm_connection(minimalvm, run_playbook):
         "gather_facts": False,
         "connection": "qubes",
     }
-    playbook = [
+
+    default_user_playbook = [
         {
             **play_attrs,
             "tasks": [
@@ -241,6 +277,14 @@ def test_minimalvm_connection(minimalvm, run_playbook):
                 },
             ],
         },
+    ]
+
+    default_user_result = run_playbook(
+        default_user_playbook, vms=[minimalvm.name]
+    )
+    assert default_user_result.returncode == 0, default_user_result.stdout
+
+    connect_user_playbook = [
         {
             **play_attrs,
             "remote_user": "user",
@@ -253,6 +297,14 @@ def test_minimalvm_connection(minimalvm, run_playbook):
                 },
             ],
         },
+    ]
+
+    connect_user_result = run_playbook(
+        connect_user_playbook, vms=[minimalvm.name]
+    )
+    assert connect_user_result.returncode == 0, connect_user_result.stdout
+
+    connect_root_playbook = [
         {
             **play_attrs,
             "remote_user": "root",
@@ -266,9 +318,11 @@ def test_minimalvm_connection(minimalvm, run_playbook):
             ],
         },
     ]
-    result = run_playbook(playbook, vms=[minimalvm.name])
-    # Playbook should run successfully
-    assert result.returncode == 0, result.stderr
+
+    connect_root_result = run_playbook(
+        connect_root_playbook, vms=[minimalvm.name]
+    )
+    assert connect_root_result.returncode == 0, connect_root_result.stdout
 
     become_playbook = [
         {
@@ -282,6 +336,18 @@ def test_minimalvm_connection(minimalvm, run_playbook):
             ],
         },
     ]
+
     become_result = run_playbook(become_playbook, vms=[minimalvm.name])
     # Playbook should fail because "become" isn't possibile on unmodified minimal vms.
-    assert become_result.returncode == 2, become_result.stderr
+    assert become_result.returncode == 2, become_result.stdout
+
+    become_output = json.loads(become_result.stdout)
+    become_module_result = become_output["plays"][0]["tasks"][0]["hosts"][
+        minimalvm.name
+    ]
+    assert become_module_result["failed"], become_result.stdout
+    assert become_module_result["rc"] == 1, become_result.stdout
+    assert (
+        become_module_result["module_stderr"].rstrip()
+        == "sudo: a password is required"
+    ), become_result.stdout
