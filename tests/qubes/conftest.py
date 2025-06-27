@@ -71,3 +71,23 @@ def cleanup_vm(qubes, request):
             core(Module({"command": "remove", "name": name}))
         except Exception:
             pass
+
+
+@pytest.fixture
+def latest_net_ports(qubes):
+    # Collect all net‐class PCI port_ids from dom0
+    # See fepitre/qubes-g2g-continuous-integration
+    ports = [
+        f"pci:dom0:{dev.port_id}"
+        for dev in qubes.domains["dom0"].devices["pci"]
+        if repr(dev.interfaces[0]).startswith("p02")
+    ]
+    assert len(ports) >= 2, "Need at least two PCI net devices for these tests"
+    return ports
+
+
+@pytest.fixture
+def block_device():
+    # Assume the block device under test is always present
+    # See fepitre/qubes-g2g-continuous-integration
+    return "block:dom0:vdb"

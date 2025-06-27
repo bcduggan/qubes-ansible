@@ -1,5 +1,4 @@
 import os
-import pytest
 import time
 
 from plugins.modules.qubesos import core, VIRT_SUCCESS, VIRT_FAILED
@@ -219,7 +218,7 @@ def test_default_netvm(qubes, vm, netvm, request):
                 "name": vm.name,
                 "properties": {"netvm": netvm.name},
             }
-	)
+        )
     )
     assert "netvm" in change_netvm_res["Properties updated"]
     assert change_netvm_rc == VIRT_SUCCESS
@@ -232,7 +231,7 @@ def test_default_netvm(qubes, vm, netvm, request):
                 "name": vm.name,
                 "properties": {"netvm": "*default*"},
             }
-	)
+        )
     )
     assert "netvm" in reset_netvm_res["Properties updated"]
     assert default_netvm != netvm
@@ -315,6 +314,7 @@ def test_removetags_without_tags(qubes, vmname, request):
     assert rc == VIRT_FAILED
     assert "Missing tag" in res.get("Error", "")
 
+
 def test_pci_facts_match_actual_devices(qubes):
     # Gather PCI facts from the module
     rc, res = core(Module({"gather_device_facts": True}))
@@ -348,47 +348,179 @@ def test_pci_facts_match_actual_devices(qubes):
     assert set(facts["pci_audio"]) == set(audio_actual)
 
 
-def test_create_vm_with_latest_net_device_from_facts(qubes, vmname, request):
+def test_strict_single_pci(qubes, vmname, request, latest_net_ports):
     request.node.mark_vm_created(vmname)
+    port = latest_net_ports[-1]
 
-    # Collect all net‐class PCI port_ids from dom0
-    all_net_ports = [
-        f"pci:dom0:{dev.port_id}"
-        for dev in qubes.domains["dom0"].devices["pci"]
-        if repr(dev.interfaces[0]).startswith("p02")
-    ]
-    assert all_net_ports, "No PCI net devices available on dom0"
-    latest_port = all_net_ports[-1]
-
-    # Create the VM, passing only the latest net device
+    # Create VM in strict mode with only one PCI device
     rc, res = core(
-        Module({
-            "state": "present",
-            "name": vmname,
-            "devices": [latest_port],
-        })
+        Module(
+            {
+                "state": "present",
+                "name": vmname,
+                "devices": [port],
+            }
+        )
     )
     assert rc == VIRT_SUCCESS
 
-    # Verify that exactly that one port is assigned
     qubes.domains.refresh_cache(force=True)
     assigned = qubes.domains[vmname].devices["pci"].get_assigned_devices()
-    assigned_ports = [f"pci:dom0:{d.virtual_device.port_id}" if hasattr(d, "virtual_device") else d.port_id for d in assigned]
-    assert assigned_ports == [latest_port]
+    ports_assigned = [
+        (
+            f"pci:dom0:{d.virtual_device.port_id}"
+            if hasattr(d, "virtual_device")
+            else d.port_id
+        )
+        for d in assigned
+    ]
+    assert ports_assigned == [port]
 
     # Clean up
     core(Module({"state": "absent", "name": vmname}))
+
+
+def test_strict_multiple_devices_including_block(
+    qubes, vmname, request, latest_net_ports, block_device
+):
+    request.node.mark_vm_created(vmname)
+    # Use both PCI net devices plus the block device
+    devices = [latest_net_ports[-2], latest_net_ports[-1], block_device]
+
+    rc, res = core(
+        Module(
+            {
+                "state": "present",
+                "name": vmname,
+                "devices": devices,
+            }
+        )
+    )
+    assert rc == VIRT_SUCCESS
+
+    qubes.domains.refresh_cache(force=True)
+    pci_assigned = qubes.domains[vmname].devices["pci"].get_assigned_devices()
+    blk_assigned = qubes.domains[vmname].devices["block"].get_assigned_devices()
+
+    pci_ports = [
+        (
+            f"pci:dom0:{d.virtual_device.port_id}"
+            if hasattr(d, "virtual_device")
+            else d.port_id
+        )
+        for d in pci_assigned
+    ]
+    blk_ports = [
+        f"block:dom0:{d.device.port_id}" if hasattr(d, "device") else d.port_id
+        for d in blk_assigned
+    ]
+    assert set(pci_ports) == set(latest_net_ports[-2:]), "PCI ports mismatch"
+    assert blk_ports == [block_device], "Block device not assigned correctly"
+
+    core(Module({"state": "absent", "name": vmname}))
+
+
+def test_append_strategy_adds_without_removing(
+    qubes, vmname, request, latest_net_ports, block_device
+):
+    request.node.mark_vm_created(vmname)
+    first_port = latest_net_ports[-2]
+    second_port = latest_net_ports[-1]
+
+    # Initial create with first PCI port
+    rc, _ = core(
+        Module(
+            {
+                "state": "present",
+                "name": vmname,
+                "devices": [first_port],
+            }
+        )
+    )
+    assert rc == VIRT_SUCCESS
+
+    # Re-run with append strategy: add second PCI and block, keep first
+    rc, _ = core(
+        Module(
+            {
+                "state": "present",
+                "name": vmname,
+                "devices": {
+                    "strategy": "append",
+                    "items": [second_port, block_device],
+                },
+            }
+        )
+    )
+    assert rc == VIRT_SUCCESS
+
+    qubes.domains.refresh_cache(force=True)
+    pci_ports = [
+        (
+            f"pci:dom0:{d.virtual_device.port_id}"
+            if hasattr(d, "virtual_device")
+            else d.port_id
+        )
+        for d in qubes.domains[vmname].devices["pci"].get_assigned_devices()
+    ]
+    blk_ports = [
+        f"block:dom0:{d.device.port_id}" if hasattr(d, "device") else d.port_id
+        for d in qubes.domains[vmname].devices["block"].get_assigned_devices()
+    ]
+
+    # All three must now be present
+    assert set(pci_ports) == {first_port, second_port}
+    assert blk_ports == [block_device]
+
+    core(Module({"state": "absent", "name": vmname}))
+
+
+def test_per_device_mode_and_options(qubes, vmname, request, latest_net_ports):
+    request.node.mark_vm_created(vmname)
+    port = latest_net_ports[-1]
+
+    # Use dict format to specify a custom mode and options
+    entry = {
+        "device": port,
+        "mode": "required",
+        "options": {"no-strict-reset": True},
+    }
+
+    rc, _ = core(
+        Module(
+            {
+                "state": "present",
+                "name": vmname,
+                "devices": [entry],
+            }
+        )
+    )
+    assert rc == VIRT_SUCCESS
+
+    qubes.domains.refresh_cache(force=True)
+    assigned = list(qubes.domains[vmname].devices["pci"].get_assigned_devices())
+    assert len(assigned) == 1
+
+    mode = assigned[0].mode.value
+    opts = sorted(assigned[0].options or [])
+    assert mode == "required"
+    assert "no-strict-reset" in opts
+
+    core(Module({"state": "absent", "name": vmname}))
+
 
 def test_services_alias_to_features_only(qubes, vmname, request):
     request.node.mark_vm_created(vmname)
 
     services = ["clocksync", "minimal-netvm"]
     rc, res = core(
-        Module({
-            "state": "present",
-            "name": vmname,
-            "properties": {"services": services},
-        })
+        Module(
+            {
+                "state": "present",
+                "name": vmname,
+                "properties": {"services": services},
+            }
+        )
     )
     assert rc == VIRT_SUCCESS
 
@@ -415,14 +547,16 @@ def test_services_and_explicit_features_combined(qubes, vmname, request):
     services = ["audio", "net"]
 
     rc, res = core(
-        Module({
-            "state": "present",
-            "name": vmname,
-            "properties": {
-                "features": features,
-                "services": services,
-            },
-        })
+        Module(
+            {
+                "state": "present",
+                "name": vmname,
+                "properties": {
+                    "features": features,
+                    "services": services,
+                },
+            }
+        )
     )
     assert rc == VIRT_SUCCESS
 

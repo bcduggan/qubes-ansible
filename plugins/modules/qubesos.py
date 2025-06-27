@@ -114,11 +114,25 @@ options:
     default: []
   devices:
     description:
-      - The complete list of strings `<devclass>:<backend>:<port>[:<device_id>]` to assign.
-      - Any previously assigned device not in this list will be unassigned.
-    type: list
-    elements: str
+      - Device assignment configuration for the VM.
+      - Supported usage patterns:
+        1. A list (default _strict_ mode) device specs (strings or dicts). The VM's assigned devices will be exactly those listed, removing any others.
+        2. A dictionary:
+           - strategy (str): assignment strategy to use.  
+             - C(strict) (default): enforce exact match of assigned devices to C(items).  
+             - C(append): add only new devices in C(items), leaving existing assignments intact.
+           - items (list): list of device specs (strings or dicts) to apply under the chosen strategy.
+      - Device spec formats:
+        - string: `<devclass>:<backend_domain>:<port_id>[:<dev_id>]` (e.g. C(pci:dom0:5), C(block:dom0:vdb))
+        - dict:
+          - device (str, required): the string spec as above.
+          - mode (str, optional):
+            - For PCI devices defaults to C(required).
+            - For other classes defaults to C(auto-attach).
+          - options (dict, optional): extra Qubes device flags to pass when attaching.
+    type: raw
     default: []
+
 requirements:
   - python >= 3.12
   - qubesadmin
@@ -237,7 +251,6 @@ ansible_connection=qubes
 [standalonevms:vars]
 ansible_connection=qubes
 {% endif %}
-
 """
     template = Template(template_str)
     res = template.render(result=result)
@@ -252,9 +265,7 @@ class QubesVirt(object):
         self.app = qubesadmin.Qubes()
 
     def get_device_classes(self):
-        return [
-            c for c in self.app.list_deviceclass() if c not in {"testclass"}
-        ]
+        return [c for c in self.app.list_deviceclass() if c != "testclass"]
 
     def find_devices_of_class(self, klass):
         for dev in self.app.domains["dom0"].devices["pci"]:
@@ -336,9 +347,7 @@ class QubesVirt(object):
         netvm="*default*",
     ):
         """Start the machine via the given vmid"""
-        template_vm = ""
-        if template:
-            template_vm = template
+        template_vm = template or ""
         if netvm == "*default*":
             network_vm = self.app.default_netvm
         elif not netvm:
@@ -526,7 +535,7 @@ class QubesVirt(object):
             vm.tags.add(tag)
         return 0
 
-    def _parse_device(self, spec):
+    def parse_device(self, spec):
         parts = spec.split(":", 1)
         if len(parts) != 2:
             self.module.fail_json(msg=f"Invalid spec {spec}")
@@ -542,44 +551,95 @@ class QubesVirt(object):
 
     def list_assigned_devices(self, vmname, devclass):
         vm = self.get_vm(vmname)
-        specs = set()
+        current = {}
         for ass in vm.devices[devclass].get_assigned_devices():
+            # get the VirtualDevice
             d = getattr(ass, "virtual_device", None) or ass.device
-            specs.add(f"{devclass}:{d.backend_domain}:{d.port_id}")
-        return specs
+            spec = f"{devclass}:{d.backend_domain}:{d.port_id}"
+            mode = getattr(ass, "mode", None)
+            opts = getattr(ass, "options", None) or {}
+            current[spec] = (mode, opts)
+        return current
 
-    def assign(self, vmname, devclass, device):
+    def assign(self, vmname, devclass, device_assignment):
         vm = self.get_vm(vmname)
-        mode = "auto-attach"
-        if devclass == "pci":
-            mode = "required"
-        vm.devices[devclass].assign(DeviceAssignment(device, mode=mode))
+        vm.devices[devclass].assign(device_assignment)
         return 0
 
-    def unassign(self, vmname, devclass, device):
+    def unassign(self, vmname, devclass, device_assignment):
         vm = self.get_vm(vmname)
-        vm.devices[devclass].unassign(
-            DeviceAssignment(device, frontend_domain=vm)
-        )
+        vm.devices[devclass].unassign(device_assignment)
         return 0
 
     def sync_devices(self, vmname, devclass, desired):
-        current = self.list_assigned_devices(vmname, devclass)
-        desired_set = set(desired or [])
+        # build desired map: spec -> (vd, per_mode, opts)
+        desired_map = {
+            f"{devclass}:{vd.backend_domain}:{vd.port_id}": (
+                vd,
+                per_mode,
+                opts or {},
+            )
+            for vd, per_mode, opts in (desired or [])
+        }
+
+        # current assignments: spec -> (mode, opts)
+        current_map = self.list_assigned_devices(vmname, devclass)
+
+        current_specs = set(current_map)
+        desired_specs = set(desired_map)
+
         changed = False
-        for spec in current - desired_set:
-            cls, dev = self._parse_device(spec)
-            self.unassign(vmname, cls, dev)
+
+        # 1) Unassign anything not in desired
+        for spec in current_specs - desired_specs:
+            cls, dev = self.parse_device(spec)
+            self.unassign(
+                vmname,
+                cls,
+                DeviceAssignment(dev, frontend_domain=self.get_vm(vmname)),
+            )
             changed = True
-        for spec in desired_set - current:
-            cls, dev = self._parse_device(spec)
-            self.assign(vmname, cls, dev)
+
+        # 2) Reassign anything whose mode or options differ
+        for spec in current_specs & desired_specs:
+            existing_mode, existing_opts = current_map[spec]
+            vd, per_mode, opts = desired_map[spec]
+            # normalize desired_mode
+            desired_mode = per_mode or (
+                "required" if devclass == "pci" else "auto-attach"
+            )
+            if existing_mode.value != desired_mode or existing_opts != opts:
+                # tear down the old and set up the new
+                cls, dev = self.parse_device(spec)
+                self.unassign(
+                    vmname,
+                    cls,
+                    DeviceAssignment(dev, frontend_domain=self.get_vm(vmname)),
+                )
+                self.assign(
+                    vmname,
+                    devclass,
+                    DeviceAssignment(vd, mode=desired_mode, options=opts),
+                )
+                changed = True
+
+        # 3) Assign any new specs
+        for spec in desired_specs - current_specs:
+            vd, per_mode, opts = desired_map[spec]
+            assign_mode = per_mode or (
+                "required" if devclass == "pci" else "auto-attach"
+            )
+            self.assign(
+                vmname,
+                devclass,
+                DeviceAssignment(vd, mode=assign_mode, options=opts),
+            )
             changed = True
+
         return changed
 
 
 def core(module):
-
     state = module.params.get("state", None)
     guest = module.params.get("name", None)
     command = module.params.get("command", None)
@@ -591,10 +651,77 @@ def core(module):
     devices = module.params.get("devices", [])
     netvm = None
     res = {}
+    device_specs = []
 
     v = QubesVirt(module)
 
-    # gather devices information
+    # Normalize devices into (set_mode, device_specs)
+    if isinstance(devices, dict):
+        set_mode = devices.get("strategy", "strict")
+        device_specs = devices.get("items") or []
+    elif isinstance(devices, list):
+        # flat list -> always strict
+        set_mode = "strict"
+        device_specs = devices
+    else:
+        module.fail_json(msg=f"Invalid devices parameter: {devices!r}")
+
+    # Now expand each spec into (class, VirtualDevice, per_mode, options)
+    normalized_devices = []
+    for entry in device_specs:
+        if isinstance(entry, str):
+            # simple string spec -> no per-device mode or options
+            cls, vd = v.parse_device(entry)
+            normalized_devices.append((cls, vd, None, []))
+        elif isinstance(entry, dict):
+            # dict spec must have a "device" key
+            device_str = entry.get("device")
+            if not device_str:
+                module.fail_json(
+                    msg=f"Device entry missing 'device': {entry!r}"
+                )
+            cls, vd = v.parse_device(device_str)
+            # optional per-device mode (e.g. "required" or "auto-attach")
+            per_mode = entry.get("mode")
+            # optional options list
+            opts = entry.get("options", {})
+            normalized_devices.append((cls, vd, per_mode, opts))
+        else:
+            module.fail_json(msg=f"Invalid device entry: {entry!r}")
+
+    def apply_devices(vmname):
+        devices_changed = False
+        for device_class in v.get_device_classes():
+            # gather only the entries for this class
+            wants = [
+                (vd, per_mode, opts)
+                for (cls, vd, per_mode, opts) in normalized_devices
+                if cls == device_class
+            ]
+            if set_mode == "strict":
+                devices_changed |= v.sync_devices(vmname, device_class, wants)
+            elif set_mode == "append":
+                current_map = v.list_assigned_devices(vmname, device_class)
+                for vd, per_mode, opts in wants:
+                    spec = f"{device_class}:{vd.backend_domain}:{vd.port_id}"
+                    if spec in current_map:
+                        # already present -> leave it (no mode/options change in append mode)
+                        continue
+                    # new device -> assign with its mode/options
+                    assign_mode = per_mode or (
+                        "required" if device_class == "pci" else "auto-attach"
+                    )
+                    v.assign(
+                        vmname,
+                        device_class,
+                        DeviceAssignment(vd, mode=assign_mode, options=opts),
+                    )
+                    devices_changed = True
+            else:
+                module.fail_json(msg=f"Invalid devices strategy: {set_mode}")
+        return devices_changed
+
+    # gather device facts
     if module.params.get("gather_device_facts", False):
         facts = {
             "pci_net": sorted(
@@ -612,7 +739,7 @@ def core(module):
     # properties will only work with state=present
     if properties:
         for key, val in properties.items():
-            if not key in PROPS:
+            if key not in PROPS:
                 return VIRT_FAILED, {"Invalid property": key}
             if type(val) != PROPS[key]:
                 return VIRT_FAILED, {"Invalid property value type": key}
@@ -632,7 +759,7 @@ def core(module):
             if key == "volume":
                 if "name" not in val:
                     return VIRT_FAILED, {"Missing name for the volume": val}
-                elif "size" not in val:
+                if "size" not in val:
                     return VIRT_FAILED, {"Missing size for the volume": val}
 
                 allowed_name = []
@@ -661,46 +788,29 @@ def core(module):
             if tags:
                 # Apply the tags
                 v.tags(guest, tags)
-            dev_changed = False
-            for cls in v.get_device_classes():
-                dev_changed |= v.sync_devices(
-                    guest, cls, [s for s in devices if s.startswith(f"{cls}:")]
-                )
+            dev_changed = apply_devices(guest)
             res = {"changed": prop_changed or dev_changed}
             if prop_changed:
                 res["Properties updated"] = prop_vals
             if dev_changed:
-                res["Devices updated"] = dev_changed
+                res["Devices updated"] = True
             return VIRT_SUCCESS, res
 
     # This is without any properties
     if state == "present" and guest:
         try:
             v.get_vm(guest)
-            dev_changed = False
-            for cls in v.get_device_classes():
-                dev_changed |= v.sync_devices(
-                    guest, cls, [s for s in devices if s.startswith(f"{cls}:")]
-                )
-            res = {"changed": dev_changed, "devices": []}
-            if dev_changed:
-                res["devices"] = [
-                    d
-                    for cls in v.get_device_classes()
-                    for d in v.list_assigned_devices(guest, cls)
-                ]
+            dev_changed = apply_devices(guest)
+            res = {"changed": dev_changed}
         except KeyError:
             v.create(guest, vmtype, label, template)
             if tags:
-                # Apply the tags
                 v.tags(guest, tags)
-            for cls in v.get_device_classes():
-                v.sync_devices(
-                    guest, cls, [s for s in devices if s.startswith(f"{cls}:")]
-                )
+            apply_devices(guest)
             res = {"changed": True, "created": guest, "devices": devices}
         return VIRT_SUCCESS, res
 
+    # list_vms, get_states, createinventory commands
     if state and command == "list_vms":
         res = v.list_vms(state=state)
         if not isinstance(res, dict):
@@ -717,6 +827,7 @@ def core(module):
         create_inventory(result)
         return VIRT_SUCCESS, {"status": "successful"}
 
+    # single-command VM operations
     if command:
         if command in VM_COMMANDS:
             if not guest:
@@ -759,27 +870,28 @@ def core(module):
     if state:
         if not guest:
             module.fail_json(msg="State change requires a guest specified")
+        current = v.status(guest)
         if state == "running":
-            if v.status(guest) == "paused":
+            if current == "paused":
                 res["changed"] = True
                 res["msg"] = v.unpause(guest)
-            elif v.status(guest) != "running":
+            elif current != "running":
                 res["changed"] = True
                 res["msg"] = v.start(guest)
         elif state == "shutdown":
-            if v.status(guest) != "shutdown":
+            if current != "shutdown":
                 res["changed"] = True
                 res["msg"] = v.shutdown(guest)
         elif state == "destroyed":
-            if v.status(guest) != "shutdown":
+            if current != "shutdown":
                 res["changed"] = True
                 res["msg"] = v.destroy(guest)
-        elif state == "paused":
-            if v.status(guest) == "running":
+        elif state == "pause":
+            if current == "running":
                 res["changed"] = True
                 res["msg"] = v.pause(guest)
         elif state == "absent":
-            if v.status(guest) == "shutdown":
+            if current == "shutdown":
                 res["changed"] = True
                 res["msg"] = v.remove(guest)
         else:
@@ -813,7 +925,7 @@ def main():
             template=dict(type="str", default=None),
             properties=dict(type="dict", default={}),
             tags=dict(type="list", default=[]),
-            devices=dict(type="list", elements="str", default=[]),
+            devices=dict(type="raw", default=[]),
             gather_device_facts=dict(type="bool", default=False),
         ),
     )
