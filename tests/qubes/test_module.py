@@ -378,3 +378,67 @@ def test_create_vm_with_latest_net_device_from_facts(qubes, vmname, request):
 
     # Clean up
     core(Module({"state": "absent", "name": vmname}))
+
+def test_services_alias_to_features_only(qubes, vmname, request):
+    request.node.mark_vm_created(vmname)
+
+    services = ["clocksync", "minimal-netvm"]
+    rc, res = core(
+        Module({
+            "state": "present",
+            "name": vmname,
+            "properties": {"services": services},
+        })
+    )
+    assert rc == VIRT_SUCCESS
+
+    # The module should report 'features' was updated
+    changed = res.get("Properties updated", [])
+    assert "features" in changed
+
+    # And the VM should now have service.<svc> = 1 for each
+    qube = qubes.domains[vmname]
+    for svc in services:
+        key = f"service.{svc}"
+        assert key in qube.features
+        assert qube.features[key] == "1"
+
+    # cleanup
+    core(Module({"state": "absent", "name": vmname}))
+
+
+def test_services_and_explicit_features_combined(qubes, vmname, request):
+    request.node.mark_vm_created(vmname)
+
+    # Predefine an arbitrary feature
+    features = {"foo": "bar"}
+    services = ["audio", "net"]
+
+    rc, res = core(
+        Module({
+            "state": "present",
+            "name": vmname,
+            "properties": {
+                "features": features,
+                "services": services,
+            },
+        })
+    )
+    assert rc == VIRT_SUCCESS
+
+    # The module should report 'features' was updated
+    changed = res.get("Properties updated", [])
+    assert "features" in changed
+
+    # VM should have both the explicit feature and the aliased ones
+    qube = qubes.domains[vmname]
+    # features stays intact
+    assert qube.features.get("foo") == "bar"
+    # services get aliased
+    for svc in services:
+        key = f"service.{svc}"
+        assert key in qube.features
+        assert qube.features[key] == "1"
+
+    # cleanup
+    core(Module({"state": "absent", "name": vmname}))

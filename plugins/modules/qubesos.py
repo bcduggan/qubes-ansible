@@ -103,6 +103,7 @@ options:
           - vcpus (int)
           - virt_mode (str)
           - features (dict)
+          - services (list)
           - volume (dict; must include both 'name' and 'size')
     default: {}
   tags:
@@ -192,6 +193,7 @@ PROPS = {
     "default_dispvm": str,
     "netvm": str,
     "features": dict,
+    "services": list,
     "volume": dict,
 }
 
@@ -454,6 +456,15 @@ class QubesVirt(object):
             vm.virt_mode = prefs["virt_mode"]
             changed = True
             values_changed.append("virt_mode")
+        if "services" in prefs:
+            did_feature_changed = False
+            for service in prefs["services"]:
+                changed = True
+                did_feature_changed = True
+                prefs.setdefault("features", {})
+                prefs["features"][f"service.{service}"] = "1"
+            if did_feature_changed:
+                values_changed.append("features")
         if "features" in prefs:
             did_feature_changed = False
             for key, value in prefs["features"].items():
