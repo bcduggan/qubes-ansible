@@ -314,3 +314,67 @@ def test_removetags_without_tags(qubes, vmname, request):
     rc, res = core(Module({"command": "removetags", "name": vmname}))
     assert rc == VIRT_FAILED
     assert "Missing tag" in res.get("Error", "")
+
+def test_pci_facts_match_actual_devices(qubes):
+    # Gather PCI facts from the module
+    rc, res = core(Module({"gather_device_facts": True}))
+    assert rc == VIRT_SUCCESS, "Fact‐gathering should succeed"
+
+    facts = res["ansible_facts"]
+    assert "pci_net" in facts
+    assert "pci_usb" in facts
+    assert "pci_audio" in facts
+
+    # Compute the lists directly from qubes.domains["dom0"]
+    net_actual = [
+        f"pci:dom0:{dev.port_id}"
+        for dev in qubes.domains["dom0"].devices["pci"]
+        if repr(dev.interfaces[0]).startswith("p02")
+    ]
+    usb_actual = [
+        f"pci:dom0:{dev.port_id}"
+        for dev in qubes.domains["dom0"].devices["pci"]
+        if repr(dev.interfaces[0]).startswith("p0c03")
+    ]
+    audio_actual = [
+        f"pci:dom0:{dev.port_id}"
+        for dev in qubes.domains["dom0"].devices["pci"]
+        if repr(dev.interfaces[0]).startswith("p0403")
+    ]
+
+    # Compare sets
+    assert set(facts["pci_net"]) == set(net_actual)
+    assert set(facts["pci_usb"]) == set(usb_actual)
+    assert set(facts["pci_audio"]) == set(audio_actual)
+
+
+def test_create_vm_with_latest_net_device_from_facts(qubes, vmname, request):
+    request.node.mark_vm_created(vmname)
+
+    # Collect all net‐class PCI port_ids from dom0
+    all_net_ports = [
+        f"pci:dom0:{dev.port_id}"
+        for dev in qubes.domains["dom0"].devices["pci"]
+        if repr(dev.interfaces[0]).startswith("p02")
+    ]
+    assert all_net_ports, "No PCI net devices available on dom0"
+    latest_port = all_net_ports[-1]
+
+    # Create the VM, passing only the latest net device
+    rc, res = core(
+        Module({
+            "state": "present",
+            "name": vmname,
+            "devices": [latest_port],
+        })
+    )
+    assert rc == VIRT_SUCCESS
+
+    # Verify that exactly that one port is assigned
+    qubes.domains.refresh_cache(force=True)
+    assigned = qubes.domains[vmname].devices["pci"].get_assigned_devices()
+    assigned_ports = [f"pci:dom0:{d.virtual_device.port_id}" if hasattr(d, "virtual_device") else d.port_id for d in assigned]
+    assert assigned_ports == [latest_port]
+
+    # Clean up
+    core(Module({"state": "absent", "name": vmname}))

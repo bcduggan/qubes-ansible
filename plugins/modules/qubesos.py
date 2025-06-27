@@ -111,6 +111,13 @@ options:
       - Tags are used within Qubes OS for VM categorization.
     type: list
     default: []
+  devices:
+    description:
+      - The complete list of strings `<devclass>:<backend>:<port>[:<device_id>]` to assign.
+      - Any previously assigned device not in this list will be unassigned.
+    type: list
+    elements: str
+    default: []
 requirements:
   - python >= 3.12
   - qubesadmin
@@ -126,16 +133,19 @@ import traceback
 try:
     import qubesadmin
     from qubesadmin.exc import QubesVMNotStartedError, QubesTagNotFoundError
+    from qubesadmin.device_protocol import (
+        VirtualDevice,
+        DeviceAssignment,
+        ProtocolError,
+    )
 except ImportError:
     qubesadmin = None
     QubesVMNotStartedError = None
     QubesTagNotFoundError = None
 
 from jinja2 import Template
-
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.common.text.converters import to_native
-
 
 VIRT_FAILED = 1
 VIRT_SUCCESS = 0
@@ -239,6 +249,16 @@ class QubesVirt(object):
         self.module = module
         self.app = qubesadmin.Qubes()
 
+    def get_device_classes(self):
+        return [
+            c for c in self.app.list_deviceclass() if c not in {"testclass"}
+        ]
+
+    def find_devices_of_class(self, klass):
+        for dev in self.app.domains["dom0"].devices["pci"]:
+            if repr(dev.interfaces[0]).startswith("p" + klass):
+                yield dev.port_id
+
     def get_vm(self, vmname):
         return self.app.domains[vmname]
 
@@ -268,21 +288,21 @@ class QubesVirt(object):
     def all_vms(self):
         res = {}
         for vm in self.app.domains:
-            if vm.name != "dom0":
-                res.setdefault(vm.klass, []).append(vm.name)
+            if vm.name == "dom0":
+                continue
+            res.setdefault(vm.klass, []).append(vm.name)
         return res
 
     def info(self):
-        info = dict()
+        info = {}
         for vm in self.app.domains:
             if vm.name == "dom0":
                 continue
-            info[vm.name] = dict(
-                state=self.__get_state(vm),
-                provides_network=vm.provides_network,
-                label=vm.label.name,
-            )
-
+            info[vm.name] = {
+                "state": self.__get_state(vm.name),
+                "provides_network": vm.provides_network,
+                "label": vm.label.name,
+            }
         return info
 
     def shutdown(self, vmname):
@@ -495,6 +515,57 @@ class QubesVirt(object):
             vm.tags.add(tag)
         return 0
 
+    def _parse_device(self, spec):
+        parts = spec.split(":", 1)
+        if len(parts) != 2:
+            self.module.fail_json(msg=f"Invalid spec {spec}")
+        devclass, rest = parts
+        if devclass not in self.get_device_classes():
+            self.module.fail_json(msg=f"Invalid devclass {devclass}")
+        try:
+            device = VirtualDevice.from_str(rest, devclass, self.app.domains)
+            return devclass, device
+        except Exception as e:
+            self.module.fail_json(msg=f"Cannot parse device {spec}: {e}")
+            return None
+
+    def list_assigned_devices(self, vmname, devclass):
+        vm = self.get_vm(vmname)
+        specs = set()
+        for ass in vm.devices[devclass].get_assigned_devices():
+            d = getattr(ass, "virtual_device", None) or ass.device
+            specs.add(f"{devclass}:{d.backend_domain}:{d.port_id}")
+        return specs
+
+    def assign(self, vmname, devclass, device):
+        vm = self.get_vm(vmname)
+        mode = "auto-attach"
+        if devclass == "pci":
+            mode = "required"
+        vm.devices[devclass].assign(DeviceAssignment(device, mode=mode))
+        return 0
+
+    def unassign(self, vmname, devclass, device):
+        vm = self.get_vm(vmname)
+        vm.devices[devclass].unassign(
+            DeviceAssignment(device, frontend_domain=vm)
+        )
+        return 0
+
+    def sync_devices(self, vmname, devclass, desired):
+        current = self.list_assigned_devices(vmname, devclass)
+        desired_set = set(desired or [])
+        changed = False
+        for spec in current - desired_set:
+            cls, dev = self._parse_device(spec)
+            self.unassign(vmname, cls, dev)
+            changed = True
+        for spec in desired_set - current:
+            cls, dev = self._parse_device(spec)
+            self.assign(vmname, cls, dev)
+            changed = True
+        return changed
+
 
 def core(module):
 
@@ -506,10 +577,26 @@ def core(module):
     template = module.params.get("template", None)
     properties = module.params.get("properties", {})
     tags = module.params.get("tags", [])
+    devices = module.params.get("devices", [])
     netvm = None
+    res = {}
 
     v = QubesVirt(module)
-    res = dict()
+
+    # gather devices information
+    if module.params.get("gather_device_facts", False):
+        facts = {
+            "pci_net": sorted(
+                [f"pci:dom0:{dev}" for dev in v.find_devices_of_class("02")]
+            ),
+            "pci_usb": sorted(
+                [f"pci:dom0:{dev}" for dev in v.find_devices_of_class("0c03")]
+            ),
+            "pci_audio": sorted(
+                [f"pci:dom0:{dev}" for dev in v.find_devices_of_class("0403")]
+            ),
+        }
+        return VIRT_SUCCESS, {"changed": False, "ansible_facts": facts}
 
     # properties will only work with state=present
     if properties:
@@ -557,28 +644,50 @@ def core(module):
                     return VIRT_FAILED, {"Missing dispvm capability": val}
 
         if state == "present" and guest and vmtype:
-            changed, changed_values = v.properties(
+            prop_changed, prop_vals = v.properties(
                 guest, properties, vmtype, label, template
             )
             if tags:
                 # Apply the tags
                 v.tags(guest, tags)
-            return VIRT_SUCCESS, {
-                "Properties updated": changed_values,
-                "changed": changed,
-            }
+            dev_changed = False
+            for cls in v.get_device_classes():
+                dev_changed |= v.sync_devices(
+                    guest, cls, [s for s in devices if s.startswith(f"{cls}:")]
+                )
+            res = {"changed": prop_changed or dev_changed}
+            if prop_changed:
+                res["Properties updated"] = prop_vals
+            if dev_changed:
+                res["Devices updated"] = dev_changed
+            return VIRT_SUCCESS, res
 
     # This is without any properties
-    if state == "present" and guest and vmtype:
+    if state == "present" and guest:
         try:
             v.get_vm(guest)
-            res = {"changed": False, "status": "VM is present."}
+            dev_changed = False
+            for cls in v.get_device_classes():
+                dev_changed |= v.sync_devices(
+                    guest, cls, [s for s in devices if s.startswith(f"{cls}:")]
+                )
+            res = {"changed": dev_changed, "devices": []}
+            if dev_changed:
+                res["devices"] = [
+                    d
+                    for cls in v.get_device_classes()
+                    for d in v.list_assigned_devices(guest, cls)
+                ]
         except KeyError:
             v.create(guest, vmtype, label, template)
             if tags:
                 # Apply the tags
                 v.tags(guest, tags)
-            res = {"changed": True, "created": guest}
+            for cls in v.get_device_classes():
+                v.sync_devices(
+                    guest, cls, [s for s in devices if s.startswith(f"{cls}:")]
+                )
+            res = {"changed": True, "created": guest, "devices": devices}
         return VIRT_SUCCESS, res
 
     if state and command == "list_vms":
@@ -669,6 +778,8 @@ def core(module):
 
     module.fail_json(msg="Expected state or command parameter to be specified")
 
+    return None
+
 
 def main():
     module = AnsibleModule(
@@ -691,6 +802,8 @@ def main():
             template=dict(type="str", default=None),
             properties=dict(type="dict", default={}),
             tags=dict(type="list", default=[]),
+            devices=dict(type="list", elements="str", default=[]),
+            gather_device_facts=dict(type="bool", default=False),
         ),
     )
 

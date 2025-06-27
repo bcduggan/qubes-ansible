@@ -40,7 +40,7 @@ rm -rf %{buildroot}
 install -m 644 plugins/modules/qubesos.py %{buildroot}%{_datadir}/ansible/plugins/modules/qubesos.py
 install -m 644 plugins/connection/qubes.py %{buildroot}%{_datadir}/ansible/plugins/connection/qubes.py
 
-install -m 644 tests/*.py %{buildroot}%{_datadir}/ansible/tests/qubes/
+install -m 644 tests/qubes/*.py %{buildroot}%{_datadir}/ansible/tests/qubes/
 
 %files
 %doc README.md LICENSE EXAMPLES.md
