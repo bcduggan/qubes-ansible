@@ -49,9 +49,21 @@ options:
       - When set to C(running), ensures the VM is started.
       - When set to C(shutdown), ensures the VM is stopped.
       - When set to C(destroyed), forces the VM to shut down.
+      - When set to C(restarted), shuts the VM down then starts it again.
       - When set to C(pause), pauses a running VM.
       - When set to C(absent), removes the VM definition.
-    choices: [ present, running, shutdown, destroyed, pause, absent ]
+    choices: [ present, running, shutdown, destroyed, restarted, pause, absent ]
+  wait:
+    description:
+      - If C(true), block until the VM has fully halted before returning.
+      - Only applies to C(shutdown) and C(restarted) states.
+    type: bool
+    default: false
+  wait_timeout:
+    description:
+      - Maximum number of seconds to wait for the VM to reach C(shutdown) when C(wait) is true.
+    type: int
+    default: 300
   command:
     description:
       - Non-idempotent command to execute on the VM.
@@ -147,7 +159,7 @@ import traceback
 
 try:
     import qubesadmin
-    from qubesadmin.exc import QubesVMNotStartedError, QubesTagNotFoundError
+    from qubesadmin.exc import QubesVMNotStartedError, QubesTagNotFoundError, QubesVMError
     from qubesadmin.device_protocol import (
         VirtualDevice,
         DeviceAssignment,
@@ -157,6 +169,8 @@ except ImportError:
     qubesadmin = None
     QubesVMNotStartedError = None
     QubesTagNotFoundError = None
+    QubesVMError = None
+
 
 from jinja2 import Template
 from ansible.module_utils.basic import AnsibleModule
@@ -318,10 +332,31 @@ class QubesVirt(object):
             }
         return info
 
-    def shutdown(self, vmname):
-        """Make the machine with the given vmname stop running.  Whatever that takes."""
+    def shutdown(self, vmname, wait=False, timeout=300):
         vm = self.get_vm(vmname)
         vm.shutdown()
+        if wait:
+            start = time.time()
+            while time.time() - start < timeout:
+                if vm.is_halted():
+                    return 0
+                time.sleep(1)
+            # timed out
+            raise RuntimeError(
+                f"Timeout: VM {vmname} did not halt within {timeout}s"
+            )
+        return 0
+
+    def restart(self, vmname, wait=False, timeout=300):
+        # 1) shutdown
+        try:
+            self.shutdown(vmname, wait=wait, timeout=timeout)
+        except RuntimeError:
+            # bubble up timeout error
+            raise
+        # 2) start
+        vm = self.get_vm(vmname)
+        vm.start()
         return 0
 
     def pause(self, vmname):
@@ -881,7 +916,25 @@ def core(module):
         elif state == "shutdown":
             if current != "shutdown":
                 res["changed"] = True
-                res["msg"] = v.shutdown(guest)
+                try:
+                    v.shutdown(
+                        guest,
+                        wait=module.params["wait"],
+                        timeout=module.params["wait_timeout"],
+                    )
+                except RuntimeError as e:
+                    module.fail_json(msg=str(e))
+        elif state == "restarted":
+            res["changed"] = True
+            try:
+                v.restart(
+                    guest,
+                    wait=module.params["wait"],
+                    timeout=module.params["wait_timeout"],
+                )
+                res["msg"] = "restarted"
+            except RuntimeError as e:
+                module.fail_json(msg=str(e))
         elif state == "destroyed":
             if current != "shutdown":
                 res["changed"] = True
@@ -915,10 +968,13 @@ def main():
                     "pause",
                     "running",
                     "shutdown",
+                    "restarted",
                     "absent",
                     "present",
                 ],
             ),
+            wait=dict(type="bool", default=False),
+            wait_timeout=dict(type="int", default=300),
             command=dict(type="str", choices=ALL_COMMANDS),
             label=dict(type="str", default="red"),
             vmtype=dict(type="str", default="AppVM"),
