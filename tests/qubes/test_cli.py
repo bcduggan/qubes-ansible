@@ -8,6 +8,9 @@ import pytest
 from pathlib import Path
 
 PLUGIN_PATH = Path(__file__).parent / "plugins" / "modules"
+ANSIBLE_CONFIG = os.environ.get(
+    "ANSIBLE_CONFIG", Path(__file__).parent / "ansible.cfg"
+)
 
 
 @pytest.fixture
@@ -38,7 +41,7 @@ def run_playbook(tmp_path):
             cwd=tmp_path,
             capture_output=True,
             text=True,
-            env={"ANSIBLE_CONFIG": Path(__file__).parent / "ansible.cfg"},
+            env={"ANSIBLE_CONFIG": ANSIBLE_CONFIG},
         )
         return result
 
@@ -120,10 +123,11 @@ def test_properties_and_tags_playbook(run_playbook, request):
     assert run_output["plays"][0]["tasks"][1]["hosts"]["localhost"][
         "changed"
     ], result.stdout
-    # Tags don't appear in qubes status output
-    # assert (
-    #     "tag1" in run_output["plays"][0]["tasks"][2]["hosts"]["localhost"]["status"]
-    # ), result.stdout
+    assert {"tag1", "tag2"} == set(
+        run_output["plays"][0]["tasks"][1]["hosts"]["localhost"].get(
+            "Tags updated", []
+        )
+    ), result.stdout
 
 
 def test_inventory_playbook(run_playbook, tmp_path, qubes):

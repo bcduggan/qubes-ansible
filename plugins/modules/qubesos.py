@@ -59,11 +59,6 @@ options:
       - Only applies to C(shutdown) and C(restarted) states.
     type: bool
     default: false
-  wait_timeout:
-    description:
-      - Maximum number of seconds to wait for the VM to reach C(shutdown) when C(wait) is true.
-    type: int
-    default: 300
   command:
     description:
       - Non-idempotent command to execute on the VM.
@@ -159,7 +154,11 @@ import traceback
 
 try:
     import qubesadmin
-    from qubesadmin.exc import QubesVMNotStartedError, QubesTagNotFoundError, QubesVMError
+    from qubesadmin.exc import (
+        QubesVMNotStartedError,
+        QubesTagNotFoundError,
+        QubesVMError,
+    )
     from qubesadmin.device_protocol import (
         VirtualDevice,
         DeviceAssignment,
@@ -279,18 +278,22 @@ class QubesVirt(object):
         self.app = qubesadmin.Qubes()
 
     def get_device_classes(self):
+        """List all available device classes in dom0 (excluding 'testclass')."""
         return [c for c in self.app.list_deviceclass() if c != "testclass"]
 
     def find_devices_of_class(self, klass):
+        """Yield the port IDs of all devices matching a given class in dom0."""
         for dev in self.app.domains["dom0"].devices["pci"]:
             if repr(dev.interfaces[0]).startswith("p" + klass):
                 yield dev.port_id
 
     def get_vm(self, vmname):
+        """Retrieve a qube object by its name."""
         return self.app.domains[vmname]
 
-    def __get_state(self, domain):
-        vm = self.app.domains[domain]
+    def __get_state(self, vmname):
+        """Determine the current power state of a qube."""
+        vm = self.app.domains[vmname]
         if vm.is_paused():
             return "paused"
         if vm.is_running():
@@ -300,12 +303,14 @@ class QubesVirt(object):
         return None
 
     def get_states(self):
+        """Get the names and states of all qubes."""
         state = []
         for vm in self.app.domains:
             state.append(f"{vm.name} {self.__get_state(vm.name)}")
         return state
 
     def list_vms(self, state):
+        """List all non-dom0 qubes that match a specified state."""
         res = []
         for vm in self.app.domains:
             if vm.name != "dom0" and state == self.__get_state(vm.name):
@@ -313,6 +318,7 @@ class QubesVirt(object):
         return res
 
     def all_vms(self):
+        """Group all non-dom0 qubes by their VM class."""
         res = {}
         for vm in self.app.domains:
             if vm.name == "dom0":
@@ -321,6 +327,7 @@ class QubesVirt(object):
         return res
 
     def info(self):
+        """Gather detailed info (state, network, label) for all non-dom0 qubes."""
         info = {}
         for vm in self.app.domains:
             if vm.name == "dom0":
@@ -332,43 +339,45 @@ class QubesVirt(object):
             }
         return info
 
-    def shutdown(self, vmname, wait=False, timeout=300):
+    def shutdown(self, vmname, wait=False):
+        """
+        Shutdown the specified qube via the given id or name,
+        optionally waiting until it halts.
+        """
         vm = self.get_vm(vmname)
         vm.shutdown()
         if wait:
             start = time.time()
-            while time.time() - start < timeout:
+            while time.time() - start < vm.shutdown_timeout:
                 if vm.is_halted():
                     return 0
                 time.sleep(1)
-            # timed out
             raise RuntimeError(
-                f"Timeout: VM {vmname} did not halt within {timeout}s"
+                f"Timeout: VM {vmname} did not halt within {vm.shutdown_timeout}s"
             )
         return 0
 
-    def restart(self, vmname, wait=False, timeout=300):
-        # 1) shutdown
+    def restart(self, vmname, wait=False):
+        """
+        Restart the specified qube via the given id or name
+        by shutting it down (with optional wait) and then starting it.
+        """
         try:
-            self.shutdown(vmname, wait=wait, timeout=timeout)
+            self.shutdown(vmname, wait=wait)
         except RuntimeError:
-            # bubble up timeout error
             raise
-        # 2) start
         vm = self.get_vm(vmname)
         vm.start()
         return 0
 
     def pause(self, vmname):
-        """Pause the machine with the given vmname."""
-
+        """Pause the specified qube via the given id or name."""
         vm = self.get_vm(vmname)
         vm.pause()
         return 0
 
     def unpause(self, vmname):
-        """Unpause the machine with the given vmname."""
-
+        """Unpause the specified qube via the given id or name."""
         vm = self.get_vm(vmname)
         vm.unpause()
         return 0
@@ -381,7 +390,7 @@ class QubesVirt(object):
         template=None,
         netvm="*default*",
     ):
-        """Start the machine via the given vmid"""
+        """Create a new qube of the given type, label, template, and network."""
         template_vm = template or ""
         if netvm == "*default*":
             network_vm = self.app.default_netvm
@@ -400,27 +409,24 @@ class QubesVirt(object):
         return 0
 
     def start(self, vmname):
-        """Start the machine via the given id/name"""
-
+        """Start the specified qube via the given id or name"""
         vm = self.get_vm(vmname)
         vm.start()
         return 0
 
     def destroy(self, vmname):
-        """Pull the virtual power from the virtual domain, giving it virtually no time to virtually shut down."""
-
+        """Immediately kill the specified qube via the given id or name (no graceful shutdown)."""
         vm = self.get_vm(vmname)
         vm.kill()
         return 0
 
     def properties(self, vmname, prefs, vmtype, label, vmtemplate):
-        """Sets the given properties to the VM"""
+        """Sets the given properties to the qube"""
         changed = False
         values_changed = []
         try:
             vm = self.get_vm(vmname)
         except KeyError:
-            # Means first we have to create the vm
             self.create(vmname, vmtype, label, vmtemplate)
             vm = self.get_vm(vmname)
         if "autostart" in prefs and vm.autostart != prefs["autostart"]:
@@ -544,11 +550,10 @@ class QubesVirt(object):
         return changed, values_changed
 
     def remove(self, vmname):
-        """Stop a domain, and then wipe it from the face of the earth. (delete disk/config file)"""
+        """Destroy and then delete a qube's configuration and disk."""
         try:
             self.destroy(vmname)
         except QubesVMNotStartedError:
-            # Because it is not running
             pass
         while True:
             if self.__get_state(vmname) == "shutdown":
@@ -564,13 +569,18 @@ class QubesVirt(object):
         return self.__get_state(vmname)
 
     def tags(self, vmname, tags):
-        """Adds a list of tags to the vm"""
+        """Add a list of tags to a qube, skipping any already present."""
         vm = self.get_vm(vmname)
+        updated_tags = []
         for tag in tags:
+            if tag in vm.tags:
+                continue
             vm.tags.add(tag)
-        return 0
+            updated_tags.append(tag)
+        return updated_tags
 
     def parse_device(self, spec):
+        """Parse a device specification string into its class and VirtualDevice."""
         parts = spec.split(":", 1)
         if len(parts) != 2:
             self.module.fail_json(msg=f"Invalid spec {spec}")
@@ -585,6 +595,7 @@ class QubesVirt(object):
             return None
 
     def list_assigned_devices(self, vmname, devclass):
+        """List currently assigned devices of a given class for a qube."""
         vm = self.get_vm(vmname)
         current = {}
         for ass in vm.devices[devclass].get_assigned_devices():
@@ -597,16 +608,19 @@ class QubesVirt(object):
         return current
 
     def assign(self, vmname, devclass, device_assignment):
+        """Assign a device to the specified qube."""
         vm = self.get_vm(vmname)
         vm.devices[devclass].assign(device_assignment)
         return 0
 
     def unassign(self, vmname, devclass, device_assignment):
+        """Remove an assigned device from the specified qube."""
         vm = self.get_vm(vmname)
         vm.devices[devclass].unassign(device_assignment)
         return 0
 
     def sync_devices(self, vmname, devclass, desired):
+        """Synchronize a qube's device assignments to match the desired configuration."""
         # build desired map: spec -> (vd, per_mode, opts)
         desired_map = {
             f"{devclass}:{vd.backend_domain}:{vd.port_id}": (
@@ -617,13 +631,12 @@ class QubesVirt(object):
             for vd, per_mode, opts in (desired or [])
         }
 
+        changed = False
+
         # current assignments: spec -> (mode, opts)
         current_map = self.list_assigned_devices(vmname, devclass)
-
         current_specs = set(current_map)
         desired_specs = set(desired_map)
-
-        changed = False
 
         # 1) Unassign anything not in desired
         for spec in current_specs - desired_specs:
@@ -820,11 +833,14 @@ def core(module):
             prop_changed, prop_vals = v.properties(
                 guest, properties, vmtype, label, template
             )
+            # Apply the tags
+            tags_changed = []
             if tags:
-                # Apply the tags
-                v.tags(guest, tags)
+                tags_changed = v.tags(guest, tags)
             dev_changed = apply_devices(guest)
             res = {"changed": prop_changed or dev_changed}
+            if tags_changed:
+                res["Tags updated"] = tags_changed
             if prop_changed:
                 res["Properties updated"] = prop_vals
             if dev_changed:
@@ -839,10 +855,14 @@ def core(module):
             res = {"changed": dev_changed}
         except KeyError:
             v.create(guest, vmtype, label, template)
+            # Apply the tags
+            tags_changed = []
             if tags:
-                v.tags(guest, tags)
+                tags_changed = v.tags(guest, tags)
             apply_devices(guest)
             res = {"changed": True, "created": guest, "devices": devices}
+            if tags_changed:
+                res["tags"] = tags_changed
         return VIRT_SUCCESS, res
 
     # list_vms, get_states, createinventory commands
@@ -917,21 +937,13 @@ def core(module):
             if current != "shutdown":
                 res["changed"] = True
                 try:
-                    v.shutdown(
-                        guest,
-                        wait=module.params["wait"],
-                        timeout=module.params["wait_timeout"],
-                    )
+                    v.shutdown(guest, wait=module.params.get("wait", False))
                 except RuntimeError as e:
                     module.fail_json(msg=str(e))
         elif state == "restarted":
             res["changed"] = True
             try:
-                v.restart(
-                    guest,
-                    wait=module.params["wait"],
-                    timeout=module.params["wait_timeout"],
-                )
+                v.restart(guest, wait=module.params.get("wait", False))
                 res["msg"] = "restarted"
             except RuntimeError as e:
                 module.fail_json(msg=str(e))
@@ -974,7 +986,6 @@ def main():
                 ],
             ),
             wait=dict(type="bool", default=False),
-            wait_timeout=dict(type="int", default=300),
             command=dict(type="str", choices=ALL_COMMANDS),
             label=dict(type="str", default="red"),
             vmtype=dict(type="str", default="AppVM"),

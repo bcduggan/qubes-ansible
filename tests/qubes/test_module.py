@@ -576,3 +576,39 @@ def test_services_and_explicit_features_combined(qubes, vmname, request):
 
     # cleanup
     core(Module({"state": "absent", "name": vmname}))
+
+
+def test_shutdown_with_and_without_wait(qubes, vmname, request):
+    request.node.mark_vm_created(vmname)
+
+    # Create VM
+    rc, _ = core(
+        Module({"command": "create", "name": vmname, "vmtype": "AppVM"})
+    )
+    assert rc == VIRT_SUCCESS
+    vm = qubes.domains[vmname]
+
+    # Start VM
+    rc, _ = core(Module({"command": "start", "name": vmname}))
+    assert rc == VIRT_SUCCESS
+    assert vm.is_running()
+
+    # Shutdown without wait (default)
+    rc, _ = core(Module({"state": "shutdown", "name": vmname}))
+    assert rc == VIRT_SUCCESS
+    # vm is not halted yet
+    assert not vm.is_halted()
+    # allow a bit of time for actual shutdown
+    time.sleep(5)
+    assert vm.is_halted()
+
+    # Restart for the next check
+    rc, _ = core(Module({"command": "start", "name": vmname}))
+    assert rc == VIRT_SUCCESS
+    assert vm.is_running()
+
+    # Shutdown with wait=True
+    rc, _ = core(Module({"state": "shutdown", "name": vmname, "wait": True}))
+    assert rc == VIRT_SUCCESS
+    # should already be halted, no extra sleep needed
+    assert vm.is_halted()
